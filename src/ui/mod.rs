@@ -4,6 +4,7 @@ mod footer;
 mod header;
 mod help;
 mod view_menu;
+mod mcp;
 mod ports;
 mod projects;
 mod quota;
@@ -298,7 +299,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     const CONTEXT_MIN: u16 = 5;
     const FIXED: u16 = 2; // header + footer
 
-    let any_mid = app.show_quota || app.show_tokens || app.show_projects || app.show_ports;
+    let any_mid = app.show_quota || app.show_tokens || app.show_projects || app.show_ports || app.show_mcp;
 
     let mid_h_ideal: u16 = 8;
     let sessions_ideal: u16 = if app.show_sessions {
@@ -367,6 +368,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         if app.show_tokens { mid_constraints.push(Constraint::Length(0)); }
         if app.show_projects { mid_constraints.push(Constraint::Length(0)); }
         if app.show_ports { mid_constraints.push(Constraint::Length(0)); }
+        if app.show_mcp { mid_constraints.push(Constraint::Length(0)); }
         let count = mid_constraints.len() as u32;
         let mid_constraints: Vec<Constraint> = (0..count).map(|_| Constraint::Ratio(1, count)).collect();
 
@@ -379,7 +381,8 @@ pub fn draw(f: &mut Frame, app: &App) {
         if app.show_quota { quota::draw_quota_panel(f, app, mid_panels[mi], theme); mi += 1; }
         if app.show_tokens { tokens::draw_tokens_panel(f, app, mid_panels[mi], theme); mi += 1; }
         if app.show_projects { projects::draw_projects_panel(f, app, mid_panels[mi], theme); mi += 1; }
-        if app.show_ports { ports::draw_ports_panel(f, app, mid_panels[mi], theme); }
+        if app.show_ports { ports::draw_ports_panel(f, app, mid_panels[mi], theme); mi += 1; }
+        if app.show_mcp { mcp::draw_mcp_panel(f, app, mid_panels[mi], theme); }
         idx += 1;
     }
 

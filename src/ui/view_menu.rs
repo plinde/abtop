@@ -34,6 +34,8 @@ pub(crate) fn items(app: &App) -> Vec<ViewItem> {
         ViewItem { key: '4', label: "projects panel",  state: bool_state(app.show_projects) },
         ViewItem { key: '5', label: "ports panel",     state: bool_state(app.show_ports) },
         ViewItem { key: '6', label: "sessions panel",  state: bool_state(app.show_sessions) },
+        ViewItem { key: '7', label: "mcp servers panel", state: bool_state(app.show_mcp) },
+        ViewItem { key: 'M', label: "mcp session hide", state: bool_state(app.mcp_suppress_sessions) },
         ViewItem { key: 't', label: "cycle theme",     state: Action },
     ]
 }

@@ -1,4 +1,4 @@
-use crate::collector::{MultiCollector, read_rate_limits};
+use crate::collector::{McpServer, MultiCollector, read_rate_limits};
 use crate::host_info::{AgentAggregate, HostMetrics, HostSampler};
 use crate::model::{AgentSession, OrphanPort, RateLimitInfo, SessionStatus};
 use crate::theme::Theme;
@@ -69,6 +69,14 @@ pub struct App {
     pub show_projects: bool,
     pub show_ports: bool,
     pub show_sessions: bool,
+    pub show_mcp: bool,
+    /// MCP servers detected on the most recent tick (sourced from
+    /// MultiCollector). Populated regardless of `show_mcp` so panel
+    /// toggling doesn't cost a discovery roundtrip.
+    pub mcp_servers: Vec<McpServer>,
+    /// When true (default), mcp-server-owned rollouts are hidden from
+    /// the sessions panel. Toggle with Shift+M.
+    pub mcp_suppress_sessions: bool,
     pub config_open: bool,
     pub config_selected: usize,
     pub tree_view: bool,
@@ -97,6 +105,8 @@ impl App {
     ) -> Self {
         let (tx, rx) = mpsc::channel();
         let summaries = load_summary_cache();
+        let mut collector = MultiCollector::with_hidden(hidden_agents);
+        collector.set_mcp_suppress(true);
         Self {
             sessions: Vec::new(),
             selected: 0,
@@ -105,7 +115,7 @@ impl App {
             rate_limits: Vec::new(),
             prev_tokens: HashMap::new(),
             rate_limit_counter: 5,
-            collector: MultiCollector::with_hidden(hidden_agents),
+            collector,
             summaries,
             pending_summaries: HashSet::new(),
             summary_retries: HashMap::new(),
@@ -121,6 +131,9 @@ impl App {
             show_projects: panels.projects,
             show_ports: panels.ports,
             show_sessions: panels.sessions,
+            show_mcp: panels.mcp,
+            mcp_servers: Vec::new(),
+            mcp_suppress_sessions: true,
             config_open: false,
             config_selected: 0,
             tree_view: false,
@@ -156,9 +169,20 @@ impl App {
             4 => self.show_projects = !self.show_projects,
             5 => self.show_ports = !self.show_ports,
             6 => self.show_sessions = !self.show_sessions,
+            7 => self.show_mcp = !self.show_mcp,
             _ => return,
         }
         self.persist_panel_visibility();
+    }
+
+    /// Toggle whether mcp-server-owned rollouts are hidden from the
+    /// sessions panel. Default is on; turning it off restores upstream
+    /// behavior so the user can see exactly what mcp-server fd holding
+    /// produces (mostly stale "Done" rows).
+    pub fn toggle_mcp_session_suppression(&mut self) {
+        self.mcp_suppress_sessions = !self.mcp_suppress_sessions;
+        let label = if self.mcp_suppress_sessions { "on" } else { "off" };
+        self.set_status(format!("mcp session suppression: {}", label));
     }
 
     fn persist_panel_visibility(&mut self) {
@@ -169,6 +193,7 @@ impl App {
             projects: self.show_projects,
             ports: self.show_ports,
             sessions: self.show_sessions,
+            mcp: self.show_mcp,
         };
         if let Err(e) = crate::config::save_panel_visibility(&panels) {
             self.set_status(format!("panels save failed: {}", e));
@@ -187,7 +212,7 @@ impl App {
     }
 
     pub fn config_item_count(&self) -> usize {
-        7 // theme + 6 panel toggles
+        8 // theme + 7 panel toggles
     }
 
     pub fn config_select_next(&mut self) {
@@ -212,6 +237,7 @@ impl App {
             4 => self.show_projects = !self.show_projects,
             5 => self.show_ports = !self.show_ports,
             6 => self.show_sessions = !self.show_sessions,
+            7 => self.show_mcp = !self.show_mcp,
             _ => return,
         }
         self.persist_panel_visibility();
@@ -241,8 +267,10 @@ impl App {
 
 
     pub fn tick(&mut self) {
+        self.collector.set_mcp_suppress(self.mcp_suppress_sessions);
         self.sessions = self.collector.collect();
         self.orphan_ports = self.collector.orphan_ports.clone();
+        self.mcp_servers = self.collector.mcp_servers.clone();
         self.host_metrics = self.host_sampler.sample();
         self.agent_aggregate = AgentAggregate::from_sessions(&self.sessions);
         if self.selected >= self.sessions.len() && !self.sessions.is_empty() {

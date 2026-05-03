@@ -1,10 +1,12 @@
 pub mod claude;
 pub mod codex;
+pub mod mcp;
 pub mod process;
 pub mod rate_limit;
 
 pub use claude::ClaudeCollector;
 pub use codex::CodexCollector;
+pub use mcp::McpServer;
 pub use rate_limit::read_rate_limits;
 
 /// Redact common secret patterns to avoid displaying credentials in the TUI.
@@ -41,7 +43,8 @@ pub(crate) fn redact_secrets(s: &str) -> String {
 }
 
 use crate::model::{AgentSession, OrphanPort, RateLimitInfo, SessionStatus};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
 /// Trait for agent-specific session collectors.
 /// Implement this to add support for a new AI coding agent.
@@ -70,6 +73,20 @@ pub struct SharedProcessData {
     /// True on slow poll ticks (every 5 ticks ≈ 10s). Collectors should
     /// defer expensive discovery (e.g. /proc reads) to slow ticks.
     pub slow_tick: bool,
+    /// PIDs of detected codex mcp-server processes. Populated by
+    /// `MultiCollector` after McpDetection runs; CodexCollector
+    /// excludes these so a single mcp-server PID isn't double-counted
+    /// in the sessions panel.
+    pub mcp_server_pids: HashSet<u32>,
+    /// Rollout file paths held open by an mcp-server process. The
+    /// CodexCollector "recently finished" pass skips these to avoid
+    /// PID=0 ghost rows for threads that the mcp-server is still
+    /// holding fds for.
+    pub mcp_owned_rollouts: HashSet<PathBuf>,
+    /// When false, the suppression sets above are empty so the
+    /// sessions panel restores upstream behavior. Driven by the user
+    /// toggle (Shift+M).
+    pub mcp_suppress: bool,
 }
 
 impl SharedProcessData {
@@ -81,7 +98,15 @@ impl SharedProcessData {
             Some(p) => p.clone(),
             None => process::get_listening_ports(),
         };
-        Self { process_info, children_map, ports, slow_tick }
+        Self {
+            process_info,
+            children_map,
+            ports,
+            slow_tick,
+            mcp_server_pids: HashSet::new(),
+            mcp_owned_rollouts: HashSet::new(),
+            mcp_suppress: true,
+        }
     }
 }
 
@@ -106,6 +131,13 @@ pub struct MultiCollector {
     tracked_port_children: HashMap<u32, TrackedPortChild>,
     /// Detected orphan ports (updated each tick).
     pub orphan_ports: Vec<OrphanPort>,
+    /// MCP servers (codex mcp-server) detected on the most recent tick.
+    pub mcp_servers: Vec<McpServer>,
+    /// Whether to hide mcp-server-owned rollouts from the sessions
+    /// panel. When `false`, sessions panel reverts to upstream
+    /// behavior (mcp-server PIDs and their rollouts appear there too,
+    /// with the existing 1-of-N HashMap-overwrite caveat).
+    pub mcp_suppress: bool,
 }
 
 /// How often to refresh expensive I/O (in ticks). 5 ticks × 2s = 10s.
@@ -134,7 +166,13 @@ impl MultiCollector {
             cached_git: HashMap::new(),
             tracked_port_children: HashMap::new(),
             orphan_ports: Vec::new(),
+            mcp_servers: Vec::new(),
+            mcp_suppress: true,
         }
+    }
+
+    pub fn set_mcp_suppress(&mut self, on: bool) {
+        self.mcp_suppress = on;
     }
 
     /// Collect rate limit info from all registered collectors.
@@ -160,7 +198,7 @@ impl MultiCollector {
         current_pids.sort_unstable();
         let pids_changed = current_pids != self.cached_port_pids;
 
-        let shared = if slow_tick || pids_changed {
+        let mut shared = if slow_tick || pids_changed {
             let s = SharedProcessData::fetch(None, slow_tick);
             self.cached_ports = s.ports.clone();
             self.cached_port_pids = current_pids;
@@ -168,6 +206,16 @@ impl MultiCollector {
         } else {
             fresh_process
         };
+
+        // Detect MCP servers and stash the suppression sets in `shared`
+        // so CodexCollector can avoid double-counting their rollouts.
+        let detection = mcp::detect(&shared.process_info);
+        self.mcp_servers = detection.servers;
+        shared.mcp_suppress = self.mcp_suppress;
+        if self.mcp_suppress {
+            shared.mcp_server_pids = detection.server_pids;
+            shared.mcp_owned_rollouts = detection.owned_rollouts;
+        }
 
         let mut all = Vec::new();
         for collector in &mut self.collectors {

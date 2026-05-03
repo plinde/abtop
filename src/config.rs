@@ -8,6 +8,7 @@ pub struct PanelVisibility {
     pub projects: bool,
     pub ports: bool,
     pub sessions: bool,
+    pub mcp: bool,
 }
 
 impl Default for PanelVisibility {
@@ -19,6 +20,7 @@ impl Default for PanelVisibility {
             projects: true,
             ports: true,
             sessions: true,
+            mcp: true,
         }
     }
 }
@@ -84,6 +86,7 @@ pub fn load_config() -> AppConfig {
                 "show_projects" => config.panels.projects = parse_bool(val).unwrap_or(true),
                 "show_ports"    => config.panels.ports    = parse_bool(val).unwrap_or(true),
                 "show_sessions" => config.panels.sessions = parse_bool(val).unwrap_or(true),
+                "show_mcp"      => config.panels.mcp      = parse_bool(val).unwrap_or(true),
                 _ => {}
             }
         }
@@ -125,6 +128,7 @@ pub fn save_panel_visibility(panels: &PanelVisibility) -> Result<(), String> {
         ("show_projects", panels.projects.to_string()),
         ("show_ports",    panels.ports.to_string()),
         ("show_sessions", panels.sessions.to_string()),
+        ("show_mcp",      panels.mcp.to_string()),
     ])
 }
 

@@ -44,8 +44,13 @@ impl CodexCollector {
         // Reset live rate limit each pass — only keep it if a current session provides one
         self.last_rate_limit = None;
 
-        // Step 1: Find running codex processes from shared ps data (no extra ps call)
-        let codex_pids = Self::find_codex_pids_from_shared(&shared.process_info);
+        // Step 1: Find running codex processes from shared ps data (no extra ps call).
+        // When MCP suppression is on, exclude `codex mcp-server` PIDs — those
+        // are surfaced through the MCP servers panel instead. See issue #95.
+        let codex_pids = Self::find_codex_pids_from_shared(
+            &shared.process_info,
+            &shared.mcp_server_pids,
+        );
         let just_pids: Vec<u32> = codex_pids.iter().map(|(p, _)| *p).collect();
         let pid_to_jsonl = Self::map_pid_to_jsonl(&just_pids);
         let pid_is_exec: HashMap<u32, bool> = codex_pids.into_iter().collect();
@@ -93,6 +98,14 @@ impl CodexCollector {
                         continue;
                     }
                     if seen_jsonl.contains(&path) {
+                        continue;
+                    }
+                    // Skip rollouts still held open by an mcp-server PID:
+                    // the thread isn't actually finished, the mcp-server is
+                    // just holding the fd for resume. Without this skip, the
+                    // sessions panel grows a PID=0 "Done" row for every
+                    // historical thread on every active mcp-server.
+                    if shared.mcp_owned_rollouts.contains(&path) {
                         continue;
                     }
                     // Only show recently finished sessions (< 5 min old)
@@ -281,9 +294,17 @@ impl CodexCollector {
 
     /// Find PIDs of running codex processes from shared process data (no extra ps call).
     /// Returns (pid, is_exec) tuples — `is_exec` is true for one-shot `codex exec` runs.
-    fn find_codex_pids_from_shared(process_info: &HashMap<u32, ProcInfo>) -> Vec<(u32, bool)> {
+    /// PIDs in `mcp_server_pids` are skipped so `codex mcp-server` processes
+    /// are reported via the MCP servers panel instead.
+    fn find_codex_pids_from_shared(
+        process_info: &HashMap<u32, ProcInfo>,
+        mcp_server_pids: &std::collections::HashSet<u32>,
+    ) -> Vec<(u32, bool)> {
         let mut pids = Vec::new();
         for (pid, info) in process_info {
+            if mcp_server_pids.contains(pid) {
+                continue;
+            }
             let cmd = &info.command;
             let is_exec = cmd.contains(" exec");
             let is_codex = process::cmd_has_binary(cmd, "codex");

@@ -22,7 +22,8 @@ const ENTRIES: &[(&str, &str)] = &[
     ("  t / T",    "cycle theme / toggle tree"),
     ("  l",        "toggle timeline"),
     ("  f",        "toggle file audit"),
-    ("  1-6",      "toggle panels (context/quota/tokens/projects/ports/sessions)"),
+    ("  1-7",      "toggle panels (context/quota/tokens/projects/ports/sessions/mcp)"),
+    ("  M",        "toggle mcp-server suppression in sessions panel"),
     ("Help", ""),
     ("  ?",        "this help"),
 ];

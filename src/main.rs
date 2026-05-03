@@ -141,7 +141,8 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, demo_mode: boo
                             KeyCode::Char('T') => app.tree_view = !app.tree_view,
                             KeyCode::Char('l') => app.toggle_timeline(),
                             KeyCode::Char('f') => app.toggle_file_audit(),
-                            KeyCode::Char(c @ '1'..='6') => app.toggle_panel(c as u8 - b'0'),
+                            KeyCode::Char(c @ '1'..='7') => app.toggle_panel(c as u8 - b'0'),
+                            KeyCode::Char('M') => app.toggle_mcp_session_suppression(),
                             KeyCode::Char('t') => app.cycle_theme(),
                             _ => {}
                         }
@@ -174,7 +175,8 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, demo_mode: boo
                             KeyCode::Char('t') => app.cycle_theme(),
                             KeyCode::Char('T') => app.tree_view = !app.tree_view,
                             KeyCode::Char('l') | KeyCode::Char('L') => app.toggle_timeline(),
-                            KeyCode::Char(c @ '1'..='6') => app.toggle_panel(c as u8 - b'0'),
+                            KeyCode::Char(c @ '1'..='7') => app.toggle_panel(c as u8 - b'0'),
+                            KeyCode::Char('M') => app.toggle_mcp_session_suppression(),
                             KeyCode::Char('c') => app.toggle_config(),
                             KeyCode::Char('v') => app.toggle_view_menu(),
                             KeyCode::Char('?') => app.toggle_help(),
@@ -232,7 +234,37 @@ fn sanitize_output(s: &str) -> String {
 }
 
 fn print_snapshot(app: &App) {
-    println!("abtop — {} sessions\n", app.sessions.len());
+    println!(
+        "abtop — {} sessions, {} mcp servers\n",
+        app.sessions.len(),
+        app.mcp_servers.len()
+    );
+    if !app.mcp_servers.is_empty() {
+        let now = std::time::SystemTime::now();
+        for server in &app.mcp_servers {
+            let active = server.active_count(now, collector::mcp::ACTIVE_MTIME_SECS);
+            let total = server.rollouts.len();
+            let last_age = server
+                .latest_mtime()
+                .and_then(|m| now.duration_since(m).ok())
+                .map(|d| {
+                    if d.as_secs() < 60 {
+                        format!("{}s", d.as_secs())
+                    } else if d.as_secs() < 3600 {
+                        format!("{}m", d.as_secs() / 60)
+                    } else {
+                        format!("{}h", d.as_secs() / 3600)
+                    }
+                })
+                .unwrap_or_else(|| "—".to_string());
+            let profile = server.profile.as_deref().unwrap_or("default");
+            println!(
+                "  mcp pid={} parent={} profile={:<16} active={}/{} last={}",
+                server.pid, server.parent_cli, profile, active, total, last_age
+            );
+        }
+        println!();
+    }
     for session in &app.sessions {
         let status = match &session.status {
             model::SessionStatus::Thinking => "◉ Think",

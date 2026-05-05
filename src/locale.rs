@@ -3,9 +3,12 @@ use std::env;
 use std::sync::LazyLock;
 
 static CURRENT_LANG: LazyLock<&str> = LazyLock::new(|| {
-    let lang = env::var("ABTOP_LANG")
-        .or_else(|_| env::var("LANG"))
-        .unwrap_or_default();
+    let from_config = crate::config::load_config().language;
+    let lang = if !from_config.is_empty() {
+        from_config
+    } else {
+        env::var("LANG").unwrap_or_default()
+    };
     if lang.to_lowercase().starts_with("zh") {
         "zh-CN"
     } else {

@@ -31,6 +31,9 @@ pub struct AppConfig {
     /// Matched case-insensitively against each collector's agent_cli identifier.
     pub hidden_agents: Vec<String>,
     pub panels: PanelVisibility,
+    /// UI language override. Empty string means auto-detect from `LANG`.
+    /// Recognized values: "en", "zh" (anything starting with "zh" maps to Simplified Chinese).
+    pub language: String,
 }
 
 impl Default for AppConfig {
@@ -39,6 +42,7 @@ impl Default for AppConfig {
             theme: "btop".to_string(),
             hidden_agents: Vec::new(),
             panels: PanelVisibility::default(),
+            language: String::new(),
         }
     }
 }
@@ -80,6 +84,7 @@ pub fn load_config() -> AppConfig {
             let val = val.trim_matches('"').trim_matches('\'');
             match key {
                 "theme" => config.theme = val.to_string(),
+                "language" => config.language = val.to_string(),
                 "show_context" => config.panels.context = parse_bool(val).unwrap_or(true),
                 "show_quota" => config.panels.quota = parse_bool(val).unwrap_or(true),
                 "show_tokens" => config.panels.tokens = parse_bool(val).unwrap_or(true),
@@ -258,5 +263,15 @@ mod tests {
         assert_eq!(parse_bool("true"), Some(true));
         assert_eq!(parse_bool("False"), Some(false));
         assert_eq!(parse_bool("nope"), None);
+    }
+
+    #[test]
+    fn rewrite_language_replaces_existing() {
+        let before = "theme = \"btop\"\nlanguage = \"en\"\n";
+        let updates: Vec<(&str, String)> = vec![("language", "\"zh\"".to_string())];
+        let after = rewrite_kv_lines(before, &updates);
+        assert!(after.contains("language = \"zh\""));
+        assert!(!after.contains("language = \"en\""));
+        assert!(after.contains("theme = \"btop\""));
     }
 }

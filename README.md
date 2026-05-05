@@ -119,11 +119,18 @@ theme = "btop"
 # Hide specific agent CLIs from the TUI (case-insensitive).
 # Useful if you only use one agent and want a cleaner view.
 hidden_agents = ["codex"]
+# UI language. Omit or leave empty to auto-detect from LANG.
+language = "zh"
 ```
 
-### Language
+### Supported Languages
 
-abtop auto-detects the UI language from `LANG` — any value starting with `zh` switches to Simplified Chinese, otherwise English. Override with `ABTOP_LANG=zh` or `ABTOP_LANG=en`.
+| Code | Language            |
+| ---- | ------------------- |
+| `en` | English (default)   |
+| `zh` | Simplified Chinese  |
+
+When `language` is unset, abtop auto-detects from `LANG` — any value starting with `zh` switches to Simplified Chinese, otherwise English.
 
 ## Key Bindings
 

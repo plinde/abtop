@@ -139,16 +139,21 @@ fn draw_source_column(
     };
 
     let mut lines: Vec<Line> = Vec::new();
-    let mut label_spans = vec![Span::styled(
+    lines.push(Line::from(Span::styled(
         format!(" {}", rl.source.to_uppercase()),
         Style::default()
             .fg(theme.title)
             .add_modifier(Modifier::BOLD),
-    )];
+    )));
+    // Freshness on its own indented line so the full "Ns/m/h/d ago"
+    // string fits without truncation when the column is narrow
+    // (panels share width and the per-column budget is ~10 chars).
     if !fresh_str.is_empty() {
-        label_spans.push(Span::styled(fresh_str, Style::default().fg(fresh_color)));
+        lines.push(Line::from(Span::styled(
+            format!("  {}", fresh_str),
+            Style::default().fg(fresh_color),
+        )));
     }
-    lines.push(Line::from(label_spans));
 
     if let Some(used_pct) = rl.five_hour_pct {
         let remaining = (100.0 - used_pct).clamp(0.0, 100.0);

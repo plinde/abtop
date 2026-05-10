@@ -1,6 +1,6 @@
 use crate::app::App;
 use crate::locale::t;
-use crate::model::{AgentSession, FileOp};
+use crate::model::{AgentSession, ChatRole, FileOp};
 use crate::theme::Theme;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -505,17 +505,26 @@ pub(crate) fn draw_sessions_panel_active(
         let has_children = !session.children.is_empty();
         let has_subagents = !session.subagents.is_empty();
         let has_tool_calls = !session.tool_calls.is_empty();
+        let has_chat = !session.chat_messages.is_empty();
         let has_left_detail = has_children || has_subagents;
         let has_file_audit = app.show_file_audit && !session.file_accesses.is_empty();
         // Focus mode: file audit (F) takes priority over timeline (L) when both
         // are toggled on. Only one "full lower" mode is active at a time.
         let file_audit_focused = has_file_audit;
         let timeline_focused = !file_audit_focused && app.show_timeline && has_tool_calls;
-        // Default timeline: split only when there is useful left-side detail;
-        // otherwise use the whole lower area.
+        // Default detail is chat when available; otherwise fall back to the
+        // compact timeline split. Both modes split when there is useful
+        // left-side detail (children/subagents) on a wide enough terminal,
+        // and use the whole lower area otherwise.
+        const CHAT_SPLIT_MIN_WIDTH: u16 = 120;
+        let chat_default = !file_audit_focused && !app.show_timeline && has_chat;
+        let chat_side_by_side =
+            chat_default && has_left_detail && detail_body.width >= CHAT_SPLIT_MIN_WIDTH;
+        let chat_full_width = chat_default && !chat_side_by_side;
         const TIMELINE_SPLIT_MIN_WIDTH: u16 = 120;
         let timeline_default = !file_audit_focused
             && !app.show_timeline
+            && !chat_default
             && has_tool_calls
             && detail_body.width >= TIMELINE_SPLIT_MIN_WIDTH;
         let timeline_side_by_side = timeline_default && has_left_detail;
@@ -531,6 +540,8 @@ pub(crate) fn draw_sessions_panel_active(
         };
         let has_lower = file_audit_focused
             || timeline_focused
+            || chat_full_width
+            || chat_side_by_side
             || timeline_full_width
             || timeline_side_by_side
             || has_children
@@ -586,6 +597,7 @@ pub(crate) fn draw_sessions_panel_active(
         // Layout below the session header:
         //   - file audit focus (F): full-width file audit
         //   - timeline focus (L): full-width timeline
+        //   - default chat: full-width, or split with children/subagents on wide terminals
         //   - wide terminal with left detail + tool calls: split lower area
         //   - wide terminal with only tool calls: full-width timeline
         //   - otherwise: children/subagents only (or nothing)
@@ -594,8 +606,10 @@ pub(crate) fn draw_sessions_panel_active(
                 draw_file_audit(f, session, lower, theme);
             } else if timeline_focused || timeline_full_width {
                 draw_timeline(f, session, lower, theme, app.timeline_scroll);
+            } else if chat_full_width {
+                draw_chat_history(f, session, lower, theme);
             } else {
-                let (left_area, right_timeline_area) = if timeline_side_by_side {
+                let (left_area, right_detail_area) = if chat_side_by_side || timeline_side_by_side {
                     let split = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -605,8 +619,12 @@ pub(crate) fn draw_sessions_panel_active(
                     (lower, None)
                 };
 
-                if let Some(tl_area) = right_timeline_area {
-                    draw_timeline(f, session, tl_area, theme, app.timeline_scroll);
+                if let Some(detail_area) = right_detail_area {
+                    if chat_side_by_side {
+                        draw_chat_history(f, session, detail_area, theme);
+                    } else {
+                        draw_timeline(f, session, detail_area, theme, app.timeline_scroll);
+                    }
                 }
 
                 if has_children || has_subagents {
@@ -851,6 +869,45 @@ pub(crate) fn draw_sessions_panel_active(
             f.render_widget(Paragraph::new(footer_lines), detail_footer);
         }
     }
+}
+
+/// Render the recent user/assistant chat tail for the selected session.
+fn draw_chat_history(f: &mut Frame, session: &AgentSession, area: Rect, theme: &Theme) {
+    if session.chat_messages.is_empty() {
+        return;
+    }
+
+    let mut lines = Vec::new();
+    lines.push(Line::from(Span::styled(
+        format!(
+            " {} ({})",
+            t("detail.chat").as_str(),
+            session.chat_messages.len()
+        ),
+        Style::default()
+            .fg(theme.title)
+            .add_modifier(Modifier::BOLD),
+    )));
+
+    let visible_rows = area.height.saturating_sub(1) as usize;
+    let start = session.chat_messages.len().saturating_sub(visible_rows);
+    let text_w = (area.width as usize).saturating_sub(6);
+
+    for msg in session.chat_messages.iter().skip(start) {
+        let (label, color) = match msg.role {
+            ChatRole::User => ("U", theme.hi_fg),
+            ChatRole::Assistant => ("A", theme.proc_misc),
+        };
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {} ", label), Style::default().fg(color)),
+            Span::styled(
+                truncate_str(&msg.text, text_w),
+                Style::default().fg(theme.main_fg),
+            ),
+        ]));
+    }
+
+    f.render_widget(Paragraph::new(lines), area);
 }
 
 /// Render the file access audit log in the given area.

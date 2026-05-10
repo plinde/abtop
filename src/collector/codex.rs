@@ -1,5 +1,8 @@
 use super::process::{self, ProcInfo};
-use crate::model::{AgentSession, ChildProcess, RateLimitInfo, SessionStatus, ToolCall};
+use crate::model::{
+    AgentSession, ChatMessage, ChatRole, ChildProcess, RateLimitInfo, SessionStatus, ToolCall,
+    MAX_CHAT_MESSAGES,
+};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
@@ -47,10 +50,8 @@ impl CodexCollector {
         // Step 1: Find running codex processes from shared ps data (no extra ps call).
         // When MCP suppression is on, exclude `codex mcp-server` PIDs — those
         // are surfaced through the MCP servers panel instead. See issue #95.
-        let codex_pids = Self::find_codex_pids_from_shared(
-            &shared.process_info,
-            &shared.mcp_server_pids,
-        );
+        let codex_pids =
+            Self::find_codex_pids_from_shared(&shared.process_info, &shared.mcp_server_pids);
         let just_pids: Vec<u32> = codex_pids.iter().map(|(p, _)| *p).collect();
         let pid_to_jsonl = Self::map_pid_to_jsonl(&just_pids, &self.sessions_dir);
         let pid_is_exec: HashMap<u32, bool> = codex_pids.into_iter().collect();
@@ -176,7 +177,9 @@ impl CodexCollector {
         let mem_mb = proc.map(|p| p.rss_kb / 1024).unwrap_or(0);
         let display_pid = pid.unwrap_or(0);
 
-        let project_name = process::last_path_segment(&result.cwd).unwrap_or("?").to_string();
+        let project_name = process::last_path_segment(&result.cwd)
+            .unwrap_or("?")
+            .to_string();
 
         // Status detection
         // Note: Codex interactive sessions emit task_complete after every turn,
@@ -283,6 +286,7 @@ impl CodexCollector {
                 children,
                 initial_prompt: result.initial_prompt,
                 first_assistant_text: String::new(),
+                chat_messages: result.chat_messages,
                 tool_calls: result.tool_calls,
                 pending_since_ms: result.pending_since_ms,
                 thinking_since_ms: result.thinking_since_ms,
@@ -471,6 +475,9 @@ struct CodexJSONLResult {
     model_generating: bool,
     last_activity: std::time::SystemTime,
     initial_prompt: String,
+    chat_messages: Vec<ChatMessage>,
+    /// Input tokens excluding cached input, matching AgentSession's additive
+    /// token accounting where cache reads are stored separately.
     total_input: u64,
     total_output: u64,
     total_cache_read: u64,
@@ -516,6 +523,29 @@ fn value_to_tool_arg(value: &Value) -> Option<String> {
 fn sanitize_tool_arg(arg: &str) -> String {
     let redacted = super::redact_secrets(arg);
     redacted.chars().take(120).collect()
+}
+
+fn push_chat_message(messages: &mut Vec<ChatMessage>, role: ChatRole, text: String) {
+    if text.is_empty() {
+        return;
+    }
+    messages.push(ChatMessage { role, text });
+    let len = messages.len();
+    if len > MAX_CHAT_MESSAGES {
+        messages.drain(..len - MAX_CHAT_MESSAGES);
+    }
+}
+
+fn clean_chat_text(raw: &str, max: usize) -> String {
+    let cleaned = raw
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty() && !l.starts_with("```"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let terminal_safe = super::sanitize_terminal_text(&cleaned);
+    let redacted = super::redact_secrets(&terminal_safe);
+    redacted.chars().take(max).collect()
 }
 
 fn parse_codex_tool_arg(arguments: &str) -> String {
@@ -626,6 +656,7 @@ fn parse_codex_jsonl(path: &Path) -> Option<CodexJSONLResult> {
         model_generating: false,
         last_activity: std::time::UNIX_EPOCH,
         initial_prompt: String::new(),
+        chat_messages: Vec::new(),
         total_input: 0,
         total_output: 0,
         total_cache_read: 0,
@@ -718,16 +749,23 @@ fn parse_codex_jsonl(path: &Path) -> Option<CodexJSONLResult> {
                     Some("user_message") => {
                         result.model_generating = true;
                         result.thinking_since_ms = event_timestamp_ms(&val).unwrap_or(0);
-                        if result.initial_prompt.is_empty() {
-                            if let Some(msg) = payload["message"].as_str() {
+                        if let Some(msg) = payload["message"].as_str() {
+                            if result.initial_prompt.is_empty() {
                                 let truncated: String = msg.chars().take(120).collect();
                                 result.initial_prompt = super::redact_secrets(&truncated);
                             }
+                            push_chat_message(
+                                &mut result.chat_messages,
+                                ChatRole::User,
+                                clean_chat_text(msg, 500),
+                            );
                         }
                     }
                     Some("token_count") => {
                         let info = &payload["info"];
-                        // Use total_token_usage as cumulative snapshot for totals
+                        // Codex input_tokens already includes cached_input_tokens.
+                        // Store only the non-cached input portion so
+                        // AgentSession::total_tokens() does not double-count cache.
                         let total = &info["total_token_usage"];
                         if total.is_object() {
                             let inp = total["input_tokens"].as_u64().unwrap_or(0);
@@ -736,22 +774,20 @@ fn parse_codex_jsonl(path: &Path) -> Option<CodexJSONLResult> {
                                 .as_u64()
                                 .or_else(|| total["cache_read_input_tokens"].as_u64())
                                 .unwrap_or(0);
-                            result.total_input = inp;
+                            result.total_input = inp.saturating_sub(cache);
                             result.total_output = out;
                             result.total_cache_read = cache;
                         }
-                        // Use last_token_usage for context % and sparkline
+                        // Use last_token_usage input as the current context window.
+                        // cached_input_tokens is a subset of input_tokens, not extra
+                        // context after compaction.
                         let last = &info["last_token_usage"];
                         if last.is_object() {
                             let inp = last["input_tokens"].as_u64().unwrap_or(0);
                             let out = last["output_tokens"].as_u64().unwrap_or(0);
-                            let cache = last["cached_input_tokens"]
-                                .as_u64()
-                                .or_else(|| last["cache_read_input_tokens"].as_u64())
-                                .unwrap_or(0);
-                            result.last_context_tokens = inp + cache;
+                            result.last_context_tokens = inp;
                             if result.token_history.len() < 10_000 {
-                                result.token_history.push(inp + out + cache);
+                                result.token_history.push(inp + out);
                             }
                         }
                         // Context window may also appear inside info
@@ -795,6 +831,13 @@ fn parse_codex_jsonl(path: &Path) -> Option<CodexJSONLResult> {
                         result.turn_count += 1;
                         result.model_generating = false;
                         result.thinking_since_ms = 0;
+                        if let Some(msg) = payload["message"].as_str() {
+                            push_chat_message(
+                                &mut result.chat_messages,
+                                ChatRole::Assistant,
+                                clean_chat_text(msg, 500),
+                            );
+                        }
                     }
                     Some("task_complete") => {
                         result.task_complete = true;
@@ -1037,17 +1080,33 @@ mod tests {
             &mut file,
             &[
                 SESSION_META,
-                r#"{"type":"event_msg","timestamp":"2026-03-28T15:01:00Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":500,"output_tokens":200,"cached_input_tokens":100},"last_token_usage":{"input_tokens":50,"output_tokens":20,"cached_input_tokens":10},"model_context_window":128000}}}"#,
+                r#"{"type":"event_msg","timestamp":"2026-03-28T15:01:00Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":500,"output_tokens":200,"cached_input_tokens":100,"total_tokens":700},"last_token_usage":{"input_tokens":50,"output_tokens":20,"cached_input_tokens":10,"total_tokens":70},"model_context_window":128000}}}"#,
             ],
         );
         let result = parse_codex_jsonl(file.path()).unwrap();
-        assert_eq!(result.total_input, 500);
+        assert_eq!(result.total_input, 400);
         assert_eq!(result.total_output, 200);
         assert_eq!(result.total_cache_read, 100);
-        assert_eq!(result.last_context_tokens, 60); // 50 + 10
+        assert_eq!(result.last_context_tokens, 50);
         assert_eq!(result.context_window, 128000);
         assert_eq!(result.token_history.len(), 1);
-        assert_eq!(result.token_history[0], 80); // 50 + 20 + 10
+        assert_eq!(result.token_history[0], 70);
+    }
+
+    #[test]
+    fn test_parse_codex_context_does_not_double_count_cached_input() {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        write_lines(
+            &mut file,
+            &[
+                SESSION_META,
+                r#"{"type":"event_msg","timestamp":"2026-03-28T15:01:00Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":58140501,"cached_input_tokens":55267712,"output_tokens":114278,"total_tokens":58254779},"last_token_usage":{"input_tokens":151839,"cached_input_tokens":146816,"output_tokens":621,"total_tokens":152460},"model_context_window":258400}}}"#,
+            ],
+        );
+        let result = parse_codex_jsonl(file.path()).unwrap();
+        assert_eq!(result.last_context_tokens, 151_839);
+        assert_eq!(result.context_window, 258_400);
+        assert!(result.last_context_tokens < result.context_window);
     }
 
     #[test]
@@ -1079,7 +1138,7 @@ mod tests {
         );
         let result = parse_codex_jsonl(file.path()).unwrap();
         assert_eq!(result.total_cache_read, 30);
-        assert_eq!(result.last_context_tokens, 25); // 20 + 5
+        assert_eq!(result.last_context_tokens, 20);
     }
 
     #[test]
@@ -1137,6 +1196,28 @@ mod tests {
         assert!(
             !result.model_generating,
             "agent_message must close the thinking window"
+        );
+    }
+
+    #[test]
+    fn test_parse_codex_chat_tail_from_user_and_agent_messages() {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        write_lines(
+            &mut file,
+            &[
+                SESSION_META,
+                r#"{"type":"event_msg","timestamp":"2026-03-28T15:01:00Z","payload":{"type":"user_message","message":"check \u0007auth\u202E sk-proj-secret"}}"#,
+                r#"{"type":"event_msg","timestamp":"2026-03-28T15:02:00Z","payload":{"type":"agent_message","message":"Auth guard\u0008 is the failing path."}}"#,
+            ],
+        );
+        let result = parse_codex_jsonl(file.path()).unwrap();
+        assert_eq!(result.chat_messages.len(), 2);
+        assert_eq!(result.chat_messages[0].role, ChatRole::User);
+        assert_eq!(result.chat_messages[0].text, "check auth [REDACTED]");
+        assert_eq!(result.chat_messages[1].role, ChatRole::Assistant);
+        assert_eq!(
+            result.chat_messages[1].text,
+            "Auth guard is the failing path."
         );
     }
 

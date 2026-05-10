@@ -1296,7 +1296,7 @@ mod tests {
     }
 
     #[test]
-    fn desktop_timeline_uses_full_width_when_left_detail_is_empty() {
+    fn desktop_default_detail_shows_chat_instead_of_timeline() {
         let mut app = App::new_with_config(Theme::default(), &[], PanelVisibility::default());
         crate::demo::populate_demo(&mut app);
         app.sessions[app.selected].children.clear();
@@ -1306,13 +1306,18 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| draw(f, &app)).unwrap();
         let text = format!("{}", terminal.backend());
-        let timeline_col = text
-            .lines()
-            .find_map(|line| line.find("TIMELINE"))
-            .expect("timeline should render");
+
         assert!(
-            timeline_col < 20,
-            "timeline should use the empty left detail area\n{text}"
+            text.contains("CHAT"),
+            "chat should render by default\n{text}"
+        );
+        assert!(
+            text.contains("webhook signatures"),
+            "recent chat tail should render selected session messages\n{text}"
+        );
+        assert!(
+            !text.contains("TIMELINE"),
+            "timeline should be opt-in via l toggle\n{text}"
         );
     }
 

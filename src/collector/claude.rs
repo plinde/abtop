@@ -1,7 +1,7 @@
 use super::process::{self, ProcInfo};
 use crate::model::{
-    AgentSession, ChildProcess, FileAccess, FileOp, SessionFile, SessionStatus, SubAgent,
-    MAX_FILE_ACCESSES,
+    AgentSession, ChatMessage, ChatRole, ChildProcess, FileAccess, FileOp, SessionFile,
+    SessionStatus, SubAgent, MAX_CHAT_MESSAGES, MAX_FILE_ACCESSES,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -106,7 +106,8 @@ impl ClaudeCollector {
         }
 
         let self_pid = std::process::id();
-        let active_session_paths = self.discover_active_session_paths(&shared.process_info, self_pid);
+        let active_session_paths =
+            self.discover_active_session_paths(&shared.process_info, self_pid);
         let active_config_dirs: Vec<ConfigDir> = active_session_paths
             .iter()
             .map(|(_, config)| config.clone())
@@ -408,6 +409,11 @@ impl ClaudeCollector {
                         prev.tool_calls
                             .extend(delta.tool_calls.into_iter().take(remaining));
                     }
+                    prev.chat_messages.extend(delta.chat_messages);
+                    let len = prev.chat_messages.len();
+                    if len > MAX_CHAT_MESSAGES {
+                        prev.chat_messages.drain(..len - MAX_CHAT_MESSAGES);
+                    }
                     // Only overwrite turn-state when the delta actually
                     // observed new user/assistant lines. A no-op tick (file
                     // didn't grow) returns an empty delta whose zeroed
@@ -458,6 +464,7 @@ impl ClaudeCollector {
             token_history: Vec::new(),
             initial_prompt: String::new(),
             first_assistant_text: String::new(),
+            chat_messages: Vec::new(),
             tool_calls: Vec::new(),
             last_assistant_ts_ms: 0,
             last_user_ts_ms: 0,
@@ -485,6 +492,7 @@ impl ClaudeCollector {
         let compaction_count = cached.compaction_count;
         let initial_prompt = cached.initial_prompt.clone();
         let first_assistant_text = cached.first_assistant_text.clone();
+        let chat_messages = cached.chat_messages.clone();
         let tool_calls = cached.tool_calls.clone();
         let file_accesses = cached.file_accesses.clone();
 
@@ -624,6 +632,7 @@ impl ClaudeCollector {
             children,
             initial_prompt,
             first_assistant_text,
+            chat_messages,
             tool_calls,
             pending_since_ms: cached.last_assistant_ts_ms,
             thinking_since_ms: cached.last_user_ts_ms,
@@ -1157,6 +1166,8 @@ struct TranscriptResult {
     initial_prompt: String,
     /// First assistant response text (text blocks only, no tool_use)
     first_assistant_text: String,
+    /// Recent real chat messages, excluding tool_result wrappers and tool inputs.
+    chat_messages: Vec<ChatMessage>,
     /// Tool call timeline extracted from transcript.
     tool_calls: Vec<crate::model::ToolCall>,
     /// Timestamp of the last assistant turn (epoch ms), used to compute tool duration.
@@ -1239,6 +1250,7 @@ fn parse_transcript(path: &Path, from_offset: u64) -> TranscriptResult {
         token_history: Vec::new(),
         initial_prompt: String::new(),
         first_assistant_text: String::new(),
+        chat_messages: Vec::new(),
         tool_calls: Vec::new(),
         last_assistant_ts_ms: 0,
         last_user_ts_ms: 0,
@@ -1420,6 +1432,14 @@ fn parse_transcript(path: &Path, from_offset: u64) -> TranscriptResult {
                                         }
                                     }
                                 }
+                                let assistant_text = extract_chat_text(msg);
+                                if !assistant_text.is_empty() {
+                                    push_chat_message(
+                                        &mut result.chat_messages,
+                                        ChatRole::Assistant,
+                                        assistant_text,
+                                    );
+                                }
                                 // Extract all tool_use entries: timeline + current_task + file access audit
                                 let mut has_tool_use = false;
                                 if let Some(content) = msg.get("content").and_then(|c| c.as_array())
@@ -1503,15 +1523,20 @@ fn parse_transcript(path: &Path, from_offset: u64) -> TranscriptResult {
                                 result.last_assistant_ts_ms = 0;
                             }
                             // Mark the start of a thinking window — next assistant
-                            // turn clears it. **Skip tool_result wrappers**:
-                            // Claude Code serializes both real prompts and tool
-                            // results as `user`-role lines, but only real prompts
-                            // mean "model has been asked, no reply yet". A tool
-                            // loop alternates assistant(tool_use) ↔ user(tool_result)
-                            // inside one logical turn, and treating each
-                            // tool_result as the start of a new thinking window
-                            // makes the status flicker Think ↔ Wait per tool call.
-                            if entry_ts_ms > 0 && !is_tool_result_user_msg(val.get("message")) {
+                            // turn clears it. **Skip synthetic user lines**:
+                            // Claude Code serializes both real prompts and a number
+                            // of non-prompt entries (tool_result wrappers, slash
+                            // commands like /plugin, ! bash invocations, meta
+                            // caveats) as `user`-role lines. Only real prompts
+                            // mean "model has been asked, no reply yet"; the
+                            // others either belong inside an existing turn or
+                            // are pure local operations that never invoke the
+                            // model. Treating them as a thinking window pins
+                            // the session in Thinking forever (e.g. /plugin
+                            // update flushes 3 user-role lines and no
+                            // assistant reply ever arrives to clear them).
+                            let synthetic = is_synthetic_user_msg(&val);
+                            if entry_ts_ms > 0 && !synthetic {
                                 result.last_user_ts_ms = entry_ts_ms;
                             }
                             result.saw_turn = true;
@@ -1521,10 +1546,24 @@ fn parse_transcript(path: &Path, from_offset: u64) -> TranscriptResult {
                             if let Some(b) = val.get("gitBranch").and_then(|b| b.as_str()) {
                                 result.git_branch = b.to_string();
                             }
-                            // Extract first user prompt as session title
-                            if result.initial_prompt.is_empty() {
+                            // Extract first user prompt as session title — also
+                            // skip synthetic lines so the title isn't
+                            // "<command-name>/plugin..." or a bash stdout dump.
+                            if result.initial_prompt.is_empty() && !synthetic {
                                 if let Some(msg) = val.get("message") {
                                     result.initial_prompt = extract_prompt_text(msg);
+                                }
+                            }
+                            if !synthetic {
+                                if let Some(msg) = val.get("message") {
+                                    let user_text = extract_chat_text(msg);
+                                    if !user_text.is_empty() {
+                                        push_chat_message(
+                                            &mut result.chat_messages,
+                                            ChatRole::User,
+                                            user_text,
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -1552,25 +1591,104 @@ fn parse_transcript(path: &Path, from_offset: u64) -> TranscriptResult {
 /// Handles both string content and array-of-blocks content.
 /// Encode a cwd path to match Claude Code's project directory naming.
 /// Claude Code replaces '/', '_', and '.' with '-'.
-/// True iff a `user`-role transcript message is a tool_result wrapper
-/// (Claude Code returns tool outputs to the model as user-role messages
-/// whose content blocks are `{type: "tool_result", ...}`). Used to keep
-/// tool loops from flickering the Thinking status: only real prompts
-/// should open a new thinking window.
+/// True iff a `user`-role transcript entry is *synthetic* — i.e. not a
+/// real human prompt that the model still owes a reply for. Three forms:
 ///
-/// Conservative: returns true only when the message has content blocks
-/// AND every block is a tool_result. A mixed block message is treated
-/// as a real prompt so we never silently swallow user input.
-fn is_tool_result_user_msg(message: Option<&Value>) -> bool {
-    let Some(message) = message else { return false };
-    let Some(Value::Array(arr)) = message.get("content") else {
-        return false;
-    };
-    if arr.is_empty() {
-        return false;
+/// 1. `isMeta: true` — Claude Code's explicit marker for non-prompt
+///    entries (e.g. the `<local-command-caveat>` line).
+/// 2. `content` is an array and every block is `tool_result` — the
+///    user-role wrapper Claude Code uses to feed tool output back to
+///    the model. A mixed block message is treated as a real prompt so
+///    we never silently swallow user input.
+/// 3. `content` is a string opening with a known local-command tag —
+///    `/plugin`, `/exit`, `!bash`, etc. all serialize as user-role
+///    lines like `<command-name>...`, `<local-command-stdout>...`,
+///    `<bash-input>...`. These are pure local operations that never
+///    invoke the model, so treating them as a prompt would leave
+///    `last_user_ts_ms` stuck and pin the session in Thinking forever.
+fn is_synthetic_user_msg(entry: &Value) -> bool {
+    if entry.get("isMeta").and_then(|v| v.as_bool()).unwrap_or(false) {
+        return true;
     }
-    arr.iter()
-        .all(|block| block.get("type").and_then(|t| t.as_str()) == Some("tool_result"))
+    let Some(message) = entry.get("message") else { return false };
+    match message.get("content") {
+        Some(Value::Array(arr)) => {
+            !arr.is_empty()
+                && arr.iter().all(|block| {
+                    block.get("type").and_then(|t| t.as_str()) == Some("tool_result")
+                })
+        }
+        Some(Value::String(s)) => {
+            let t = s.trim_start();
+            t.starts_with("<local-command-stdout>")
+                || t.starts_with("<local-command-stderr>")
+                || t.starts_with("<local-command-caveat>")
+                || t.starts_with("<command-name>")
+                || t.starts_with("<bash-input>")
+                || t.starts_with("<bash-stdout>")
+                || t.starts_with("<bash-stderr>")
+        }
+        _ => false,
+    }
+}
+
+fn push_chat_message(messages: &mut Vec<ChatMessage>, role: ChatRole, text: String) {
+    if text.is_empty() {
+        return;
+    }
+    messages.push(ChatMessage { role, text });
+    let len = messages.len();
+    if len > MAX_CHAT_MESSAGES {
+        messages.drain(..len - MAX_CHAT_MESSAGES);
+    }
+}
+
+fn extract_chat_text(message: &Value) -> String {
+    let raw = match message.get("content") {
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|block| {
+                if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+                    block
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .map(|s| s.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+        _ => String::new(),
+    };
+    clean_chat_text(&raw, 500)
+}
+
+fn clean_chat_text(raw: &str, max: usize) -> String {
+    let cleaned = raw
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty() && !l.starts_with("```"))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let mut without_images = cleaned;
+    while let Some(start) = without_images.find("[Image") {
+        if let Some(end) = without_images[start..].find(']') {
+            without_images = format!(
+                "{}{}",
+                &without_images[..start],
+                without_images[start + end + 1..].trim_start()
+            );
+        } else {
+            break;
+        }
+    }
+
+    let terminal_safe = super::sanitize_terminal_text(without_images.trim());
+    let redacted = super::redact_secrets(&terminal_safe);
+    truncate(&redacted, max)
 }
 
 fn encode_cwd_path(cwd: &str) -> String {
@@ -2039,6 +2157,56 @@ mod tests {
         let result = parse_transcript(file.path(), 0);
 
         assert_eq!(result.last_context_tokens, 12_004);
+    }
+
+    #[test]
+    fn test_parse_transcript_slash_command_does_not_open_thinking_window() {
+        // Regression: `/plugin update` (and other pure-local slash commands)
+        // flush 2-3 user-role lines into the transcript and never produce an
+        // assistant reply. Before the fix, the trailing `<local-command-stdout>`
+        // line set last_user_ts_ms and the session was pinned in Thinking
+        // forever (Think generating reply). All three line shapes must be
+        // treated as synthetic.
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        write_lines(&mut file, &[
+            // Real prompt + assistant reply to seed a clean Wait state.
+            r#"{"type":"user","timestamp":"2026-03-28T15:00:00Z","message":{"role":"user","content":"hi"}}"#,
+            r#"{"type":"assistant","timestamp":"2026-03-28T15:00:01Z","message":{"model":"claude-sonnet-4-6","usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"text","text":"hello"}]}}"#,
+            // The three user-role lines `/plugin update` writes:
+            r#"{"type":"user","timestamp":"2026-03-28T15:01:00Z","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>Caveat: ...</local-command-caveat>"}}"#,
+            r#"{"type":"user","timestamp":"2026-03-28T15:01:00Z","message":{"role":"user","content":"<command-name>/plugin</command-name>\n<command-args>update foo</command-args>"}}"#,
+            r#"{"type":"user","timestamp":"2026-03-28T15:01:00Z","message":{"role":"user","content":"<local-command-stdout>Updated foo</local-command-stdout>"}}"#,
+        ]);
+
+        let result = parse_transcript(file.path(), 0);
+
+        assert!(result.saw_turn);
+        assert_eq!(
+            result.last_user_ts_ms, 0,
+            "/plugin local-command lines must not reopen the thinking window",
+        );
+        // Title must come from the real prompt, not the synthetic lines.
+        assert_eq!(result.initial_prompt, "hi");
+    }
+
+    #[test]
+    fn test_parse_transcript_bash_input_does_not_open_thinking_window() {
+        // `!ls` and friends serialize as <bash-input>/<bash-stdout> user-role
+        // lines with no assistant reply. Same failure mode as /plugin.
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        write_lines(&mut file, &[
+            r#"{"type":"assistant","timestamp":"2026-03-28T15:00:00Z","message":{"model":"claude-sonnet-4-6","usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"text","text":"ok"}]}}"#,
+            r#"{"type":"user","timestamp":"2026-03-28T15:00:05Z","message":{"role":"user","content":"<bash-input>ls</bash-input>"}}"#,
+            r#"{"type":"user","timestamp":"2026-03-28T15:00:05Z","message":{"role":"user","content":"<bash-stdout>a\nb</bash-stdout><bash-stderr></bash-stderr>"}}"#,
+        ]);
+
+        let result = parse_transcript(file.path(), 0);
+
+        assert!(result.saw_turn);
+        assert_eq!(
+            result.last_user_ts_ms, 0,
+            "<bash-input>/<bash-stdout> lines must not reopen the thinking window",
+        );
     }
 
     #[test]
@@ -2560,6 +2728,31 @@ n/Users/bob/.claude-alt/projects/-Users-bob-project/session.jsonl
         assert_eq!(result.total_input, 300); // 100 + 200
         assert_eq!(result.total_output, 130); // 50 + 80
         assert_eq!(result.token_history.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_transcript_chat_tail_skips_tool_results() {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        write_lines(
+            &mut file,
+            &[
+                r#"{"type":"user","timestamp":"2026-03-28T15:00:00Z","message":{"role":"user","content":"fi\u0007x login\u202E"}}"#,
+                r#"{"type":"assistant","timestamp":"2026-03-28T15:00:05Z","message":{"model":"claude-sonnet-4-6","usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"text","text":"I'll inspect\u0008 auth."},{"type":"tool_use","name":"Read","input":{"file_path":"src/auth.rs"}}]}}"#,
+                r#"{"type":"user","timestamp":"2026-03-28T15:00:06Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"secret output"}]}}"#,
+                r#"{"type":"assistant","timestamp":"2026-03-28T15:00:10Z","message":{"model":"claude-sonnet-4-6","usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"text","text":"Root cause is the guard."}]}}"#,
+            ],
+        );
+        let result = parse_transcript(file.path(), 0);
+        assert_eq!(result.chat_messages.len(), 3);
+        assert_eq!(result.chat_messages[0].role, ChatRole::User);
+        assert_eq!(result.chat_messages[0].text, "fix login");
+        assert_eq!(result.chat_messages[1].role, ChatRole::Assistant);
+        assert_eq!(result.chat_messages[1].text, "I'll inspect auth.");
+        assert_eq!(result.chat_messages[2].text, "Root cause is the guard.");
+        assert!(result
+            .chat_messages
+            .iter()
+            .all(|msg| !msg.text.contains("secret output")));
     }
 
     #[test]

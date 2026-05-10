@@ -423,6 +423,12 @@ fn unix_token_has_binary(tok: &str, name: &str) -> bool {
     if base == name {
         return true;
     }
+    // Strip .exe suffix for compatibility with claude.exe on non-Windows (e.g. @anthropic-ai/claude-code npm package)
+    if let Some(stripped) = base.strip_suffix(".exe") {
+        if stripped == name {
+            return true;
+        }
+    }
     matches!((iter.next(), iter.next()), (Some("versions"), Some(parent)) if parent == name)
 }
 
@@ -533,6 +539,20 @@ mod tests {
         assert!(cmd_has_binary("/usr/local/bin/claude --foo", "claude"));
         assert!(cmd_has_binary("claude", "claude"));
         assert!(!cmd_has_binary("/usr/local/bin/claude-launch", "claude"));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn cmd_has_binary_exe_suffix_on_unix() {
+        // The @anthropic-ai/claude-code npm package ships a binary named
+        // `claude.exe` even on macOS/Linux. Ensure we still detect it.
+        assert!(cmd_has_binary(
+            "/usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe --session-id abc",
+            "claude",
+        ));
+        assert!(cmd_has_binary("claude.exe", "claude"));
+        // Must not match unrelated .exe binaries
+        assert!(!cmd_has_binary("/usr/bin/notclaude.exe", "claude"));
     }
 
     #[test]

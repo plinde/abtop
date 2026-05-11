@@ -147,7 +147,7 @@ pub(crate) fn draw_sessions_panel_active(
             crate::model::SessionStatus::Done => (t("sess.done"), theme.inactive_fg),
         };
 
-        let is_1m = session.context_window >= 1_000_000 || session.model.contains("[1m]");
+        let is_1m = session.context_window > 200_000 || session.model.contains("[1m]");
         let model_short = shorten_model(&session.model, is_1m);
         let ctx_color = grad_at(&proc_grad, session.context_percent);
 

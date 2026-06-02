@@ -375,7 +375,7 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("help.toggle_file_audit", "切换文件审计");
     m.insert(
         "help.toggle_panels",
-        "切换面板 (上下文/配额/令牌/项目/端口/会话/MCP)",
+        "切换面板 (上下文/配额/词元/项目/端口/会话/MCP)",
     );
     m.insert("help.mcp_suppress", "切换会话面板中的 MCP 服务器隐藏");
     m.insert("help.this_help", "显示帮助");
@@ -405,7 +405,7 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("view.file_audit", "文件审计");
     m.insert("view.context_panel", "上下文面板");
     m.insert("view.quota_panel", "配额面板");
-    m.insert("view.tokens_panel", "令牌面板");
+    m.insert("view.tokens_panel", "词元面板");
     m.insert("view.projects_panel", "项目面板");
     m.insert("view.ports_panel", "端口面板");
     m.insert("view.sessions_panel", "会话面板");
@@ -429,7 +429,7 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("tokens.cache_w", "缓存写");
     m.insert("tokens.turns", "轮数");
     m.insert("tokens.avg", "平均");
-    m.insert("tokens.tokens_turn", "令牌/轮");
+    m.insert("tokens.tokens_turn", "词元/轮");
 
     // Context panel
     m.insert("context.rate", "速率");
@@ -480,7 +480,7 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("config.close", "Esc 关闭");
     m.insert("config.context_panel", "上下文面板 (1)");
     m.insert("config.quota_panel", "配额面板 (2)");
-    m.insert("config.tokens_panel", "令牌面板 (3)");
+    m.insert("config.tokens_panel", "词元面板 (3)");
     m.insert("config.projects_panel", "项目面板 (4)");
     m.insert("config.ports_panel", "端口面板 (5)");
     m.insert("config.sessions_panel", "会话面板 (6)");

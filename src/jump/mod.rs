@@ -85,6 +85,7 @@ pub fn run_jump(pid: u32) -> JumpOutcome {
 
 /// Parse `ps -o tty= -p <pid>` output into a `/dev/...` path.
 /// Returns `None` when the process has no controlling tty (`??` or empty).
+#[cfg(any(test, target_os = "macos"))]
 fn parse_tty(raw: &str) -> Option<String> {
     let t = raw.trim();
     if t.is_empty() || t == "??" {
@@ -103,6 +104,7 @@ fn parse_env_var(ps_output: &str, var: &str) -> Option<String> {
 
 /// Map the osascript marker line to a jump attempt.
 /// `FOUND` → jumped, anything else (incl. `NOTFOUND`/empty) → not applicable.
+#[cfg(any(test, target_os = "macos"))]
 fn interpret_osascript(stdout: &str) -> JumpAttempt {
     if stdout.trim() == "FOUND" {
         JumpAttempt::Jumped
@@ -138,6 +140,7 @@ fn find_pane_target(list_output: &str, is_descendant: impl Fn(u32) -> bool) -> O
 // ---------------------------------------------------------------------------
 
 /// Controlling tty of a process as a `/dev/...` path, via `ps -o tty=`.
+#[cfg(target_os = "macos")]
 fn pid_tty(pid: u32) -> Option<String> {
     let out = Command::new("ps")
         .args(["-o", "tty=", "-p", &pid.to_string()])

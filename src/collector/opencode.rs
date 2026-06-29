@@ -366,8 +366,8 @@ LIMIT {};"#,
                 model_map.insert(
                     id.to_string(),
                     (
-                        mr["model"].as_str().unwrap_or("").to_string(),
-                        mr["provider"].as_str().unwrap_or("").to_string(),
+                        sanitize_db_field(mr["model"].as_str().unwrap_or(""), 256),
+                        sanitize_db_field(mr["provider"].as_str().unwrap_or(""), 256),
                     ),
                 );
             }
@@ -378,16 +378,11 @@ LIMIT {};"#,
             let id = row["id"].as_str().unwrap_or("").to_string();
             let (model, provider) = model_map.remove(&id).unwrap_or_default();
 
-            // Sanitize DB-sourced strings: truncate, redact secrets in title
-            let mut title = row["title"].as_str().unwrap_or("").to_string();
-            let mut directory = row["directory"].as_str().unwrap_or("").to_string();
-            let mut version = row["version"].as_str().unwrap_or("").to_string();
-            let mut project_name = row["project_name"].as_str().unwrap_or("").to_string();
-            truncate_field(&mut title, 512);
-            truncate_field(&mut directory, 4096);
-            truncate_field(&mut version, 64);
-            truncate_field(&mut project_name, 256);
-            let title = super::redact_secrets(&title);
+            // Sanitize DB-sourced strings before they reach the TUI/JSON snapshot.
+            let title = sanitize_db_title(row["title"].as_str().unwrap_or(""));
+            let directory = sanitize_db_field(row["directory"].as_str().unwrap_or(""), 4096);
+            let version = sanitize_db_field(row["version"].as_str().unwrap_or(""), 64);
+            let project_name = sanitize_db_field(row["project_name"].as_str().unwrap_or(""), 256);
 
             sessions.push(DbSession {
                 id,
@@ -446,6 +441,16 @@ fn is_symlink(path: &Path) -> bool {
     fs::symlink_metadata(path)
         .map(|m| m.file_type().is_symlink())
         .unwrap_or(true)
+}
+
+fn sanitize_db_title(raw: &str) -> String {
+    super::redact_secrets(&sanitize_db_field(raw, 512))
+}
+
+fn sanitize_db_field(raw: &str, max_bytes: usize) -> String {
+    let mut value = super::sanitize_terminal_text(raw);
+    truncate_field(&mut value, max_bytes);
+    value
 }
 
 /// Truncate a string at a char boundary to avoid panics on multi-byte UTF-8.
@@ -603,6 +608,22 @@ mod tests {
         let path_str = collector.db_path.to_string_lossy();
         assert!(path_str.contains("opencode"));
         assert!(path_str.ends_with("opencode.db"));
+    }
+
+    #[test]
+    fn sanitize_db_field_removes_terminal_control_chars() {
+        assert_eq!(
+            sanitize_db_field("proj\u{202E}\u{0008}name", 512),
+            "projname"
+        );
+    }
+
+    #[test]
+    fn sanitize_db_title_redacts_known_secret_prefixes() {
+        assert_eq!(
+            sanitize_db_title("debug sk-ant-secret-value now"),
+            "debug [REDACTED] now"
+        );
     }
 
     #[test]

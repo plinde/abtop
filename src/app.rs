@@ -136,6 +136,8 @@ pub struct App {
     pub tree_view: bool,
     /// When true, `t` toggles tree_view instead of cycling themes.
     pub lock_theme: bool,
+    /// Section under the mouse cursor (None when nothing hovered).
+    pub hovered_section: Option<NarrowSection>,
     /// Additional dirs scanned for abtop-rate-limits.json (from config claude_config_dirs).
     rate_limit_dirs: Vec<PathBuf>,
     pub filter_text: String,
@@ -211,6 +213,7 @@ impl App {
             config_selected: 0,
             tree_view: false,
             lock_theme,
+            hovered_section: None,
             rate_limit_dirs: claude_config_dirs.to_vec(),
             filter_text: String::new(),
             filter_active: false,

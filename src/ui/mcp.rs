@@ -11,10 +11,6 @@ use std::time::SystemTime;
 
 use super::{btop_block_active, fmt_age, grad_at, make_gradient};
 
-pub(crate) fn draw_mcp_panel(f: &mut Frame, app: &App, area: Rect, theme: &Theme) {
-    draw_mcp_panel_active(f, app, area, theme, false);
-}
-
 pub(crate) fn draw_mcp_panel_active(
     f: &mut Frame,
     app: &App,

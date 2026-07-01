@@ -358,6 +358,9 @@ fn handle_mouse_event(app: &mut App, mouse: MouseEvent, area: Rect) {
     }
 
     match mouse.kind {
+        MouseEventKind::Moved => {
+            app.hovered_section = ui::hover_section(app, area, mouse.column, mouse.row);
+        }
         MouseEventKind::Down(MouseButton::Left) => {
             if let Some(target) = ui::click_target(app, area, mouse.column, mouse.row) {
                 match target {

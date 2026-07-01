@@ -12,10 +12,6 @@ use super::{
     styled_label, truncate_str,
 };
 
-pub(crate) fn draw_tokens_panel(f: &mut Frame, app: &App, area: Rect, theme: &Theme) {
-    draw_tokens_panel_active(f, app, area, theme, false);
-}
-
 pub(crate) fn draw_tokens_panel_active(
     f: &mut Frame,
     app: &App,

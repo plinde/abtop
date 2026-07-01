@@ -12,10 +12,6 @@ use super::{
     truncate_str,
 };
 
-pub(crate) fn draw_context_panel(f: &mut Frame, app: &App, area: Rect, theme: &Theme) {
-    draw_context_panel_active(f, app, area, theme, false);
-}
-
 pub(crate) fn draw_context_panel_active(
     f: &mut Frame,
     app: &App,

@@ -387,22 +387,25 @@ pub fn draw(f: &mut Frame, app: &App) {
     header::draw_header(f, app, layout.header, theme);
 
     if let Some(area) = layout.context {
-        context::draw_context_panel(f, app, area, theme);
+        let hovered = app.hovered_section == Some(NarrowSection::Context);
+        context::draw_context_panel_active(f, app, area, theme, hovered);
     }
 
     for (section, area) in layout.mid {
+        let hovered = app.hovered_section == Some(section);
         match section {
-            NarrowSection::Quota => quota::draw_quota_panel(f, app, area, theme),
-            NarrowSection::Tokens => tokens::draw_tokens_panel(f, app, area, theme),
-            NarrowSection::Projects => projects::draw_projects_panel(f, app, area, theme),
-            NarrowSection::Ports => ports::draw_ports_panel(f, app, area, theme),
-            NarrowSection::Mcp => mcp::draw_mcp_panel(f, app, area, theme),
+            NarrowSection::Quota => quota::draw_quota_panel_active(f, app, area, theme, hovered),
+            NarrowSection::Tokens => tokens::draw_tokens_panel_active(f, app, area, theme, hovered),
+            NarrowSection::Projects => projects::draw_projects_panel_active(f, app, area, theme, hovered),
+            NarrowSection::Ports => ports::draw_ports_panel_active(f, app, area, theme, hovered),
+            NarrowSection::Mcp => mcp::draw_mcp_panel_active(f, app, area, theme, hovered),
             NarrowSection::Sessions | NarrowSection::Context => {}
         }
     }
 
     if let Some(area) = layout.sessions {
-        sessions::draw_sessions_panel(f, app, area, theme);
+        let hovered = app.hovered_section == Some(NarrowSection::Sessions);
+        sessions::draw_sessions_panel_active(f, app, area, theme, hovered);
     }
     footer::draw_footer(f, app, layout.footer, theme);
 
@@ -662,7 +665,7 @@ fn draw_narrow_section(
     theme: &Theme,
     section: NarrowSection,
 ) {
-    let active = app.active_narrow_section() == Some(section);
+    let active = app.active_narrow_section() == Some(section) || app.hovered_section == Some(section);
     match section {
         NarrowSection::Sessions => {
             sessions::draw_sessions_panel_active(f, app, area, theme, active)
@@ -715,6 +718,40 @@ fn draw_overlays(f: &mut Frame, app: &App, theme: &Theme) {
     if app.help_open {
         help::draw_help_overlay(f, theme);
     }
+}
+
+pub(crate) fn hover_section(app: &App, area: Rect, column: u16, row: u16) -> Option<NarrowSection> {
+    if area.width >= DESKTOP_WIDTH {
+        let layout = desktop_layout(app, area);
+        if let Some(ctx) = layout.context {
+            if contains(ctx, column, row) {
+                return Some(NarrowSection::Context);
+            }
+        }
+        if let Some(sess) = layout.sessions {
+            if contains(sess, column, row) {
+                return Some(NarrowSection::Sessions);
+            }
+        }
+        for (section, section_area) in &layout.mid {
+            if contains(*section_area, column, row) {
+                return Some(*section);
+            }
+        }
+        return None;
+    }
+
+    let chunks = narrow_chunks(area);
+    let tab = app.active_narrow_tab()?;
+    if contains(chunks[1], column, row) {
+        for (section, section_area) in narrow_section_areas(app, tab, chunks[1]) {
+            if contains(section_area, column, row) {
+                return Some(section);
+            }
+        }
+    }
+
+    None
 }
 
 pub(crate) fn click_target(app: &App, area: Rect, column: u16, row: u16) -> Option<ClickTarget> {

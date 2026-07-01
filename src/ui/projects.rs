@@ -9,10 +9,6 @@ use ratatui::Frame;
 
 use super::{btop_block_active, grad_at, make_gradient, truncate_str};
 
-pub(crate) fn draw_projects_panel(f: &mut Frame, app: &App, area: Rect, theme: &Theme) {
-    draw_projects_panel_active(f, app, area, theme, false);
-}
-
 pub(crate) fn draw_projects_panel_active(
     f: &mut Frame,
     app: &App,

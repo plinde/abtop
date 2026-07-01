@@ -410,67 +410,67 @@ pub fn draw(f: &mut Frame, app: &App) {
 }
 
 fn desktop_layout(app: &App, area: Rect) -> DesktopLayout {
-    const CONTEXT_MIN: u16 = 5;
-    const FIXED: u16 = 2; // header + footer
-    const MID_MIN: u16 = 6;
+    const FIXED: u16 = 2;
 
     let maximized: Option<NarrowSection> = app.maximized_narrow_section();
 
-    let mut mid_sections = Vec::new();
-    if app.show_quota {
-        mid_sections.push(NarrowSection::Quota);
-    }
-    if app.show_tokens {
-        mid_sections.push(NarrowSection::Tokens);
-    }
-    if app.show_projects {
-        mid_sections.push(NarrowSection::Projects);
-    }
-    if app.show_ports {
-        mid_sections.push(NarrowSection::Ports);
-    }
-    if app.show_mcp {
-        mid_sections.push(NarrowSection::Mcp);
-    }
+    let mid_all: &[NarrowSection] = &[
+        NarrowSection::Quota,
+        NarrowSection::Tokens,
+        NarrowSection::Projects,
+        NarrowSection::Ports,
+        NarrowSection::Mcp,
+    ];
+
+    let mut mid_sections: Vec<NarrowSection> = mid_all
+        .iter()
+        .copied()
+        .filter(|s| app.narrow_section_visible(*s))
+        .collect();
 
     if let Some(max_section) = maximized {
         mid_sections.retain(|s| *s == max_section);
     }
 
-    let any_mid = !mid_sections.is_empty();
-    let mid_h_ideal: u16 = 8;
-    let sessions_ideal: u16 = if app.show_sessions {
-        (app.sessions.len() as u16 * 2 + 7).max(8)
-    } else {
-        0
-    };
-    let context_ideal: u16 = (app.sessions.len() as u16 + 4).clamp(5, 10);
-
     let available = area.height.saturating_sub(FIXED);
-    let mid_reserved = if any_mid { MID_MIN.min(available) } else { 0 };
-    let sessions_budget = available.saturating_sub(mid_reserved);
-    let sessions_h = if app.show_sessions {
-        sessions_ideal
-            .min(sessions_budget)
-            .max(5.min(sessions_budget))
+
+    // Compute heights; maximized sections get all available space.
+    let (context_h, mid_h, sessions_h) = if let Some(section) = maximized {
+        match section {
+            NarrowSection::Context => (available, 0, 0),
+            NarrowSection::Sessions => (0, 0, available),
+            _ => (0, available, 0),
+        }
     } else {
-        0
-    };
-    let after_sessions = available.saturating_sub(sessions_h);
-    let mid_h = if any_mid {
-        mid_h_ideal
-            .min(after_sessions)
-            .max(mid_reserved.min(after_sessions))
-    } else {
-        0
-    };
-    let surplus = available.saturating_sub(sessions_h + mid_h);
-    let context_h = if app.show_context && sessions_h >= sessions_ideal && surplus >= CONTEXT_MIN {
-        context_ideal.min(surplus)
-    } else if app.show_context && !app.show_sessions && surplus >= CONTEXT_MIN {
-        context_ideal.min(available.saturating_sub(mid_h))
-    } else {
-        0
+        let any_mid = !mid_sections.is_empty();
+        let sessions_ideal: u16 = if app.show_sessions {
+            (app.sessions.len() as u16 * 2 + 7).max(8)
+        } else {
+            0
+        };
+        let context_ideal: u16 = (app.sessions.len() as u16 + 4).clamp(5, 10);
+        let mid_ideal: u16 = if any_mid { 8 } else { 0 };
+
+        // Give sessions its ideal, mid its ideal, context gets the rest.
+        let sessions_h = if app.show_sessions {
+            sessions_ideal.min(available).max(5.min(available))
+        } else {
+            0
+        };
+        let after_sessions = available.saturating_sub(sessions_h);
+        let mid_h = if any_mid {
+            mid_ideal.min(after_sessions).max(6.min(after_sessions))
+        } else {
+            0
+        };
+        let after_mid = after_sessions.saturating_sub(mid_h);
+        let context_h = if app.show_context && after_mid >= 5 {
+            context_ideal.min(after_mid)
+        } else {
+            0
+        };
+
+        (context_h, mid_h, sessions_h)
     };
 
     let mut constraints = [Constraint::Length(0); 5];
@@ -478,11 +478,11 @@ fn desktop_layout(app: &App, area: Rect) -> DesktopLayout {
     constraints[n] = Constraint::Length(1);
     n += 1;
     if context_h > 0 {
-        constraints[n] = Constraint::Length(context_h);
+        constraints[n] = Constraint::Min(context_h);
         n += 1;
     }
     if mid_h > 0 {
-        constraints[n] = Constraint::Length(mid_h);
+        constraints[n] = Constraint::Min(mid_h);
         n += 1;
     }
     if sessions_h > 0 {
@@ -720,9 +720,23 @@ fn draw_overlays(f: &mut Frame, app: &App, theme: &Theme) {
 pub(crate) fn click_target(app: &App, area: Rect, column: u16, row: u16) -> Option<ClickTarget> {
     if area.width >= DESKTOP_WIDTH {
         let layout = desktop_layout(app, area);
+        if let Some(context_area) = layout.context {
+            if contains(context_area, column, row) {
+                if zoom_button_at(context_area, column, row) {
+                    return Some(ClickTarget::NarrowZoom(NarrowSection::Context));
+                }
+                return Some(ClickTarget::NarrowSection(NarrowSection::Context));
+            }
+        }
         if let Some(sessions_area) = layout.sessions {
             if contains(sessions_area, column, row) {
-                return session_at(app, sessions_area, row).map(ClickTarget::Session);
+                if let Some(index) = session_at(app, sessions_area, row) {
+                    return Some(ClickTarget::Session(index));
+                }
+                if zoom_button_at(sessions_area, column, row) {
+                    return Some(ClickTarget::NarrowZoom(NarrowSection::Sessions));
+                }
+                return Some(ClickTarget::NarrowSection(NarrowSection::Sessions));
             }
         }
         for (section, section_area) in layout.mid {

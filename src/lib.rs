@@ -310,6 +310,9 @@ fn run_app(
                             KeyCode::Char('v') => app.toggle_view_menu(),
                             KeyCode::Char('?') => app.toggle_help(),
                             KeyCode::Char('/') => app.filter_active = true,
+                            KeyCode::Esc if app.maximized_narrow_section().is_some() => {
+                                app.restore_narrow_sections()
+                            }
                             KeyCode::Esc if !app.filter_text.is_empty() => app.clear_filter(),
                             KeyCode::Char('f') | KeyCode::Char('F') => app.toggle_file_audit(),
                             KeyCode::Enter if !demo_mode => match app.jump_to_session() {

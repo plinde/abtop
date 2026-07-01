@@ -18,6 +18,6 @@ hosting = "github"
 # Whether to install an updater program
 install-updater = false
 # Homebrew tap repository
-tap = "graykode/homebrew-tap"
+tap = "plinde/homebrew-tap"
 # Publish jobs for Homebrew
 publish-jobs = ["homebrew"]

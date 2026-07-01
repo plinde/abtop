@@ -291,7 +291,7 @@ fn run_app(
                             KeyCode::Up | KeyCode::Char('k') => app.select_prev(),
                             KeyCode::Right => app.select_next_narrow_tab(),
                             KeyCode::Left => app.select_prev_narrow_tab(),
-                            KeyCode::Tab => app.select_next_section(),
+                            KeyCode::Tab | KeyCode::Char('\t') => app.select_next_section(),
                             KeyCode::BackTab => app.select_prev_section(),
                             KeyCode::Char('w') => app.set_narrow_tab(app::NarrowTab::Work),
                             KeyCode::Char('u') => app.set_narrow_tab(app::NarrowTab::Usage),
@@ -370,6 +370,9 @@ fn handle_mouse_event(app: &mut App, mouse: MouseEvent, area: Rect) {
             if let Some(target) = ui::click_target(app, area, mouse.column, mouse.row) {
                 match target {
                     ui::ClickTarget::NarrowTab(tab) => app.set_narrow_tab(tab),
+                    ui::ClickTarget::Focus(section) => {
+                        app.set_active_narrow_section(section);
+                    }
                     ui::ClickTarget::NarrowSection(section) => {
                         app.toggle_narrow_section_zoom(section);
                     }

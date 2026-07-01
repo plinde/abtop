@@ -292,6 +292,7 @@ pub(crate) enum ClickTarget {
     NarrowTab(NarrowTab),
     NarrowSection(NarrowSection),
     NarrowZoom(NarrowSection),
+    Focus(NarrowSection),
     Session(usize),
     KillOrphanPorts,
 }
@@ -774,6 +775,7 @@ pub(crate) fn click_target(app: &App, area: Rect, column: u16, row: u16) -> Opti
                 if in_header(context_area, row) {
                     return Some(ClickTarget::NarrowSection(NarrowSection::Context));
                 }
+                return Some(ClickTarget::Focus(NarrowSection::Context));
             }
         }
         if let Some(sessions_area) = layout.sessions {
@@ -787,6 +789,7 @@ pub(crate) fn click_target(app: &App, area: Rect, column: u16, row: u16) -> Opti
                 if in_header(sessions_area, row) {
                     return Some(ClickTarget::NarrowSection(NarrowSection::Sessions));
                 }
+                return Some(ClickTarget::Focus(NarrowSection::Sessions));
             }
         }
         for (section, section_area) in layout.mid {
@@ -804,6 +807,7 @@ pub(crate) fn click_target(app: &App, area: Rect, column: u16, row: u16) -> Opti
             if in_header(section_area, row) {
                 return Some(ClickTarget::NarrowSection(section));
             }
+            return Some(ClickTarget::Focus(section));
         }
         return None;
     }
@@ -834,6 +838,7 @@ pub(crate) fn click_target(app: &App, area: Rect, column: u16, row: u16) -> Opti
             if in_header(section_area, row) {
                 return Some(ClickTarget::NarrowSection(section));
             }
+            return Some(ClickTarget::Focus(section));
         }
     }
 

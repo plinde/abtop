@@ -121,6 +121,8 @@ static LOCALE_EN: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("help.refresh", "force refresh");
     m.insert("help.quit", "quit");
     m.insert("help.view_menu", "open view menu");
+    m.insert("help.tabs", "switch tab (work/usage/system)");
+    m.insert("help.zoom", "maximize / restore section");
     m.insert("help.open_config", "open config");
     m.insert("help.cycle_theme", "cycle theme / toggle tree");
     m.insert("help.toggle_timeline", "toggle timeline");
@@ -369,6 +371,8 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("help.refresh", "强制刷新");
     m.insert("help.quit", "退出");
     m.insert("help.view_menu", "打开视图菜单");
+    m.insert("help.tabs", "切换标签 (工作/使用/系统)");
+    m.insert("help.zoom", "最大化 / 恢复分区");
     m.insert("help.open_config", "打开配置");
     m.insert("help.cycle_theme", "切换主题 / 切换树视图");
     m.insert("help.toggle_timeline", "切换时间线");

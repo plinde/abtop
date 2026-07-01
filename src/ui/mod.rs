@@ -720,12 +720,18 @@ pub(crate) fn click_target(app: &App, area: Rect, column: u16, row: u16) -> Opti
             }
         }
         for (section, section_area) in layout.mid {
+            if !contains(section_area, column, row) {
+                continue;
+            }
+            if zoom_button_at(section_area, column, row) {
+                return Some(ClickTarget::NarrowZoom(section));
+            }
             if section == NarrowSection::Ports
-                && contains(section_area, column, row)
                 && ports_kill_at(app, section_area, row)
             {
                 return Some(ClickTarget::KillOrphanPorts);
             }
+            return Some(ClickTarget::NarrowSection(section));
         }
         return None;
     }

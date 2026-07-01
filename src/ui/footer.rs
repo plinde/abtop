@@ -3,7 +3,7 @@ use crate::locale::t;
 use crate::theme::Theme;
 use chrono::Timelike;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
@@ -124,6 +124,11 @@ pub(crate) fn draw_footer(f: &mut Frame, app: &App, area: Rect, theme: &Theme) {
             spans.push(Span::styled(
                 format!(" {msg} "),
                 Style::default().fg(theme.status_fg),
+            ));
+        } else if app.maximized_narrow_section().is_some() {
+            spans.push(Span::styled(
+                format!(" {} ", t("footer.zoom_out")),
+                Style::default()                .fg(theme.hi_fg).add_modifier(Modifier::BOLD),
             ));
         } else {
             spans.push(Span::styled(

@@ -147,6 +147,7 @@ static LOCALE_EN: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("footer.quit", "quit");
     m.insert("footer.sessions", "sessions");
     m.insert("footer.auto", "auto");
+    m.insert("footer.zoom_out", "Esc zoom out");
     m.insert("footer.peak_hours", "Claude Peak Hours");
     m.insert("footer.resets_in", "resets in");
     m.insert("footer.esc_clear", "Esc clear, Enter keep");
@@ -394,6 +395,7 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("footer.quit", "退出");
     m.insert("footer.sessions", "会话");
     m.insert("footer.auto", "自动");
+    m.insert("footer.zoom_out", "Esc 缩小");
     m.insert("footer.peak_hours", "Claude 高峰时段");
     m.insert("footer.resets_in", "重置于");
     m.insert("footer.esc_clear", "Esc 清除，Enter 保留");

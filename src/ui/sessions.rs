@@ -1310,7 +1310,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         terminal
             .draw(|f| {
-                draw_sessions_panel(
+                draw_sessions_panel_active(
                     f,
                     &app,
                     Rect {
@@ -1320,6 +1320,7 @@ mod tests {
                         height: 20,
                     },
                     &app.theme,
+                    true,
                 )
             })
             .unwrap();

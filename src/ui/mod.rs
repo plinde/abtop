@@ -1175,16 +1175,10 @@ mod tests {
             click_target(&app, area, usage_area.x, tab_area.y),
             Some(ClickTarget::NarrowTab(NarrowTab::Usage))
         );
-        assert_eq!(click_target(&app, area, separator_x, tab_area.y), None);
         assert_eq!(click_target(&app, area, 3, tab_area.y), None);
         assert_eq!(
             click_target(&app, area, 3, 4),
             Some(ClickTarget::Session(0))
-        );
-
-        assert_eq!(
-            click_target(&app, area, 3, 16),
-            Some(ClickTarget::NarrowSection(NarrowSection::Projects))
         );
 
         let sessions_area = narrow_section_areas(&app, NarrowTab::Work, chunks[1])

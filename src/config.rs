@@ -321,6 +321,24 @@ mod tests {
     }
 
     #[test]
+    fn test_lock_theme_default_false() {
+        let cfg = parse_config_body("");
+        assert!(!cfg.lock_theme);
+    }
+
+    #[test]
+    fn test_lock_theme_true() {
+        let cfg = parse_config_body("lock_theme = true\n");
+        assert!(cfg.lock_theme);
+    }
+
+    #[test]
+    fn test_lock_theme_false() {
+        let cfg = parse_config_body("lock_theme = false\n");
+        assert!(!cfg.lock_theme);
+    }
+
+    #[test]
     fn rewrite_language_replaces_existing() {
         let before = "theme = \"btop\"\nlanguage = \"en\"\n";
         let updates: Vec<(&str, String)> = vec![("language", "\"zh\"".to_string())];

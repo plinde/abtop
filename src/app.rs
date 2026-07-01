@@ -1121,4 +1121,82 @@ mod tests {
             "/Applications/Codex.app/Contents/Resources/codex app-server --analytics-default-enabled"
         ));
     }
+
+    fn test_app(lock_theme: bool) -> App {
+        let panels = crate::config::PanelVisibility::default();
+        let theme = crate::theme::Theme::default();
+        App::new_with_config_and_claude_dirs(theme, &[], panels, &[], lock_theme)
+    }
+
+    #[test]
+    fn test_lock_theme_default_false() {
+        let app = test_app(false);
+        assert!(!app.lock_theme);
+    }
+
+    #[test]
+    fn test_lock_theme_true() {
+        let app = test_app(true);
+        assert!(app.lock_theme);
+    }
+
+    #[test]
+    fn test_toggle_section_zoom_roundtrip() {
+        let mut app = test_app(false);
+        assert!(app.maximized_narrow_section().is_none());
+        app.toggle_narrow_section_zoom(NarrowSection::Quota);
+        assert_eq!(app.maximized_narrow_section(), Some(NarrowSection::Quota));
+        app.toggle_narrow_section_zoom(NarrowSection::Quota);
+        assert!(app.maximized_narrow_section().is_none());
+    }
+
+    #[test]
+    fn test_toggle_section_zoom_switches_section() {
+        let mut app = test_app(false);
+        app.toggle_narrow_section_zoom(NarrowSection::Quota);
+        assert_eq!(app.maximized_narrow_section(), Some(NarrowSection::Quota));
+        app.toggle_narrow_section_zoom(NarrowSection::Tokens);
+        assert_eq!(app.maximized_narrow_section(), Some(NarrowSection::Tokens));
+    }
+
+    #[test]
+    fn test_maximize_active_section_defaults_to_sessions() {
+        let mut app = test_app(false);
+        // Default active section is Sessions (Work tab, first section)
+        let active = app.active_narrow_section();
+        assert!(active.is_some());
+        app.maximize_active_narrow_section();
+        assert_eq!(app.maximized_narrow_section(), active);
+    }
+
+    #[test]
+    fn test_restore_narrow_sections() {
+        let mut app = test_app(false);
+        app.toggle_narrow_section_zoom(NarrowSection::Quota);
+        assert!(app.maximized_narrow_section().is_some());
+        app.restore_narrow_sections();
+        assert!(app.maximized_narrow_section().is_none());
+    }
+
+    #[test]
+    fn test_restore_idempotent() {
+        let mut app = test_app(false);
+        app.restore_narrow_sections();
+        assert!(app.maximized_narrow_section().is_none());
+    }
+
+    #[test]
+    fn test_hovered_section_defaults_to_none() {
+        let app = test_app(false);
+        assert!(app.hovered_section.is_none());
+    }
+
+    #[test]
+    fn test_set_active_section_switches_tab() {
+        let mut app = test_app(false);
+        // Quota is in Usage tab
+        app.set_active_narrow_section(NarrowSection::Quota);
+        assert_eq!(app.active_narrow_section(), Some(NarrowSection::Quota));
+        assert_eq!(app.active_narrow_tab(), Some(NarrowTab::Usage));
+    }
 }

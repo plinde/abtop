@@ -17,6 +17,8 @@ install-path = "CARGO_HOME"
 hosting = "github"
 # Whether to install an updater program
 install-updater = false
+# Publish homebrew even on prereleases (e.g. 0.5.2-plinde1)
+publish-prereleases = true
 # Homebrew tap repository
 tap = "plinde/homebrew-tap"
 # Publish jobs for Homebrew

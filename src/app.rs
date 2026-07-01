@@ -438,6 +438,47 @@ impl App {
         }
     }
 
+    const SECTION_ORDER: &[NarrowSection] = &[
+        NarrowSection::Context,
+        NarrowSection::Quota,
+        NarrowSection::Tokens,
+        NarrowSection::Projects,
+        NarrowSection::Ports,
+        NarrowSection::Sessions,
+        NarrowSection::Mcp,
+    ];
+
+    pub fn select_next_section(&mut self) {
+        let current = self.active_narrow_section().unwrap_or(NarrowSection::Context);
+        let pos = Self::SECTION_ORDER
+            .iter()
+            .position(|s| *s == current)
+            .unwrap_or(0);
+        for offset in 1..=Self::SECTION_ORDER.len() {
+            let candidate = Self::SECTION_ORDER[(pos + offset) % Self::SECTION_ORDER.len()];
+            if self.narrow_section_visible(candidate) {
+                self.set_active_narrow_section(candidate);
+                return;
+            }
+        }
+    }
+
+    pub fn select_prev_section(&mut self) {
+        let current = self.active_narrow_section().unwrap_or(NarrowSection::Context);
+        let pos = Self::SECTION_ORDER
+            .iter()
+            .position(|s| *s == current)
+            .unwrap_or(0);
+        let len = Self::SECTION_ORDER.len();
+        for offset in 1..=len {
+            let candidate = Self::SECTION_ORDER[(pos + len - offset) % len];
+            if self.narrow_section_visible(candidate) {
+                self.set_active_narrow_section(candidate);
+                return;
+            }
+        }
+    }
+
     pub fn maximized_narrow_section(&self) -> Option<NarrowSection> {
         let section = self.maximized_narrow_section?;
         if self.active_narrow_tab() == Some(section.tab()) && self.narrow_section_visible(section) {

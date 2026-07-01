@@ -246,9 +246,14 @@ pub(crate) fn btop_block_active(
     active: bool,
 ) -> Block<'static> {
     let title = if active {
-        format!("{title}(*)")
+        format!("{title} ●")
     } else {
         title.to_string()
+    };
+    let border_type = if active {
+        BorderType::Double
+    } else {
+        BorderType::Rounded
     };
     Block::default()
         .title(Line::from(vec![
@@ -268,7 +273,7 @@ pub(crate) fn btop_block_active(
             Span::styled("┌", Style::default().fg(box_color)),
         ]))
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_type(border_type)
         .border_style(Style::default().fg(box_color))
 }
 
@@ -1104,7 +1109,7 @@ mod tests {
                 "{w}x{h} should render sessions panel\n{text}"
             );
             assert!(
-                text.contains("sessions(*)"),
+                text.contains("sessions ●"),
                 "{w}x{h} should mark the active section in the title\n{text}"
             );
             assert!(
@@ -1332,7 +1337,7 @@ mod tests {
         terminal.draw(|f| draw(f, &app)).unwrap();
         let text = format!("{}", terminal.backend());
         assert!(
-            text.contains("quota(*)"),
+            text.contains("quota ●"),
             "zoomed section should stay active\n{text}"
         );
         assert!(

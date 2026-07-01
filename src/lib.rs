@@ -363,7 +363,7 @@ fn handle_mouse_event(app: &mut App, mouse: MouseEvent, area: Rect) {
                 match target {
                     ui::ClickTarget::NarrowTab(tab) => app.set_narrow_tab(tab),
                     ui::ClickTarget::NarrowSection(section) => {
-                        app.set_active_narrow_section(section);
+                        app.toggle_narrow_section_zoom(section);
                     }
                     ui::ClickTarget::NarrowZoom(section) => {
                         app.toggle_narrow_section_zoom(section);

@@ -414,6 +414,8 @@ fn desktop_layout(app: &App, area: Rect) -> DesktopLayout {
     const FIXED: u16 = 2; // header + footer
     const MID_MIN: u16 = 6;
 
+    let maximized: Option<NarrowSection> = app.maximized_narrow_section();
+
     let mut mid_sections = Vec::new();
     if app.show_quota {
         mid_sections.push(NarrowSection::Quota);
@@ -429,6 +431,10 @@ fn desktop_layout(app: &App, area: Rect) -> DesktopLayout {
     }
     if app.show_mcp {
         mid_sections.push(NarrowSection::Mcp);
+    }
+
+    if let Some(max_section) = maximized {
+        mid_sections.retain(|s| *s == max_section);
     }
 
     let any_mid = !mid_sections.is_empty();

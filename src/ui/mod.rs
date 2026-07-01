@@ -720,21 +720,25 @@ fn draw_overlays(f: &mut Frame, app: &App, theme: &Theme) {
     }
 }
 
+fn in_header(area: Rect, row: u16) -> bool {
+    row >= area.y && row < area.y.saturating_add(2).min(area.y + area.height)
+}
+
 pub(crate) fn hover_section(app: &App, area: Rect, column: u16, row: u16) -> Option<NarrowSection> {
     if area.width >= DESKTOP_WIDTH {
         let layout = desktop_layout(app, area);
         if let Some(ctx) = layout.context {
-            if contains(ctx, column, row) {
+            if contains(ctx, column, row) && in_header(ctx, row) {
                 return Some(NarrowSection::Context);
             }
         }
         if let Some(sess) = layout.sessions {
-            if contains(sess, column, row) {
+            if contains(sess, column, row) && session_at(app, sess, row).is_none() {
                 return Some(NarrowSection::Sessions);
             }
         }
         for (section, section_area) in &layout.mid {
-            if contains(*section_area, column, row) {
+            if contains(*section_area, column, row) && in_header(*section_area, row) {
                 return Some(*section);
             }
         }
@@ -745,7 +749,7 @@ pub(crate) fn hover_section(app: &App, area: Rect, column: u16, row: u16) -> Opt
     let tab = app.active_narrow_tab()?;
     if contains(chunks[1], column, row) {
         for (section, section_area) in narrow_section_areas(app, tab, chunks[1]) {
-            if contains(section_area, column, row) {
+            if contains(section_area, column, row) && in_header(section_area, row) {
                 return Some(section);
             }
         }

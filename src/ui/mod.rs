@@ -766,7 +766,9 @@ pub(crate) fn click_target(app: &App, area: Rect, column: u16, row: u16) -> Opti
                 if zoom_button_at(context_area, column, row) {
                     return Some(ClickTarget::NarrowZoom(NarrowSection::Context));
                 }
-                return Some(ClickTarget::NarrowSection(NarrowSection::Context));
+                if in_header(context_area, row) {
+                    return Some(ClickTarget::NarrowSection(NarrowSection::Context));
+                }
             }
         }
         if let Some(sessions_area) = layout.sessions {
@@ -777,7 +779,9 @@ pub(crate) fn click_target(app: &App, area: Rect, column: u16, row: u16) -> Opti
                 if zoom_button_at(sessions_area, column, row) {
                     return Some(ClickTarget::NarrowZoom(NarrowSection::Sessions));
                 }
-                return Some(ClickTarget::NarrowSection(NarrowSection::Sessions));
+                if in_header(sessions_area, row) {
+                    return Some(ClickTarget::NarrowSection(NarrowSection::Sessions));
+                }
             }
         }
         for (section, section_area) in layout.mid {
@@ -792,7 +796,9 @@ pub(crate) fn click_target(app: &App, area: Rect, column: u16, row: u16) -> Opti
             {
                 return Some(ClickTarget::KillOrphanPorts);
             }
-            return Some(ClickTarget::NarrowSection(section));
+            if in_header(section_area, row) {
+                return Some(ClickTarget::NarrowSection(section));
+            }
         }
         return None;
     }
@@ -820,7 +826,9 @@ pub(crate) fn click_target(app: &App, area: Rect, column: u16, row: u16) -> Opti
             if section == NarrowSection::Ports && ports_kill_at(app, section_area, row) {
                 return Some(ClickTarget::KillOrphanPorts);
             }
-            return Some(ClickTarget::NarrowSection(section));
+            if in_header(section_area, row) {
+                return Some(ClickTarget::NarrowSection(section));
+            }
         }
     }
 

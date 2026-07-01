@@ -1235,9 +1235,91 @@ mod tests {
     #[test]
     fn test_set_active_section_switches_tab() {
         let mut app = test_app(false);
-        // Quota is in Usage tab
         app.set_active_narrow_section(NarrowSection::Quota);
         assert_eq!(app.active_narrow_section(), Some(NarrowSection::Quota));
         assert_eq!(app.active_narrow_tab(), Some(NarrowTab::Usage));
+    }
+
+    #[test]
+    fn test_select_next_section_cycles_forward() {
+        let mut app = test_app(false);
+        // Default active is Sessions (Work tab). Next should be Mcp.
+        app.select_next_section();
+        assert_eq!(app.active_narrow_section(), Some(NarrowSection::Mcp));
+        app.select_next_section();
+        assert_eq!(app.active_narrow_section(), Some(NarrowSection::Context));
+    }
+
+    #[test]
+    fn test_select_prev_section_cycles_backward() {
+        let mut app = test_app(false);
+        // Default active is Sessions.
+        app.select_prev_section();
+        assert_eq!(app.active_narrow_section(), Some(NarrowSection::Ports));
+    }
+
+    #[test]
+    fn test_select_next_section_wraps_around() {
+        let mut app = test_app(false);
+        // Wrap through all 7 sections back to start
+        app.set_active_narrow_section(NarrowSection::Mcp);
+        app.select_next_section();
+        assert_eq!(app.active_narrow_section(), Some(NarrowSection::Context));
+    }
+
+    #[test]
+    fn test_select_next_section_wraps_backward() {
+        let mut app = test_app(false);
+        app.set_active_narrow_section(NarrowSection::Context);
+        app.select_prev_section();
+        assert_eq!(app.active_narrow_section(), Some(NarrowSection::Mcp));
+    }
+
+    #[test]
+    fn test_select_next_section_skips_hidden() {
+        let mut app = test_app(false);
+        app.show_quota = false;
+        app.show_tokens = false;
+        app.show_projects = false;
+        app.show_ports = false;
+        // Visible: Context, Sessions, Mcp. From Sessions → Mcp.
+        app.set_active_narrow_section(NarrowSection::Sessions);
+        app.select_next_section();
+        assert_eq!(app.active_narrow_section(), Some(NarrowSection::Mcp));
+        app.select_next_section();
+        assert_eq!(app.active_narrow_section(), Some(NarrowSection::Context));
+    }
+
+    #[test]
+    fn test_set_active_section_ignores_hidden() {
+        let mut app = test_app(false);
+        app.show_quota = false;
+        app.set_active_narrow_section(NarrowSection::Quota);
+        // Should NOT set — hidden
+        assert_ne!(app.active_narrow_section(), Some(NarrowSection::Quota));
+    }
+
+    #[test]
+    fn test_maximized_section_none_when_tab_hidden() {
+        let mut app = test_app(false);
+        app.toggle_narrow_section_zoom(NarrowSection::Quota);
+        assert_eq!(app.maximized_narrow_section(), Some(NarrowSection::Quota));
+        // Hide all Usage sections — maximized should return None
+        app.show_quota = false;
+        app.show_tokens = false;
+        app.show_context = false;
+        assert!(app.maximized_narrow_section().is_none());
+    }
+
+    #[test]
+    fn test_toggle_zoom_twice_restores() {
+        let mut app = test_app(false);
+        app.toggle_narrow_section_zoom(NarrowSection::Quota);
+        assert_eq!(app.maximized_narrow_section(), Some(NarrowSection::Quota));
+        app.toggle_narrow_section_zoom(NarrowSection::Quota);
+        assert!(app.maximized_narrow_section().is_none());
+        // Third toggle zooms again
+        app.toggle_narrow_section_zoom(NarrowSection::Quota);
+        assert_eq!(app.maximized_narrow_section(), Some(NarrowSection::Quota));
     }
 }

@@ -85,6 +85,7 @@ fn build_app(theme: theme::Theme, cfg: &config::AppConfig) -> App {
         &cfg.hidden_agents,
         cfg.panels,
         &cfg.claude_config_dirs,
+        cfg.lock_theme,
     )
 }
 
@@ -201,6 +202,7 @@ pub fn run() -> io::Result<()> {
         &cfg.hidden_agents,
         cfg.panels,
         &cfg.claude_config_dirs,
+        cfg.lock_theme,
     );
 
     // Always attempt both cleanup steps regardless of app result
@@ -220,12 +222,14 @@ fn run_app(
     hidden_agents: &[String],
     panels: config::PanelVisibility,
     claude_config_dirs: &[std::path::PathBuf],
+    lock_theme: bool,
 ) -> io::Result<()> {
     let mut app = App::new_with_config_and_claude_dirs(
         initial_theme.unwrap_or_default(),
         hidden_agents,
         panels,
         claude_config_dirs,
+        lock_theme,
     );
     if demo_mode {
         demo::populate_demo(&mut app);
@@ -250,12 +254,13 @@ fn run_app(
                     } else if app.view_open {
                         match key.code {
                             KeyCode::Esc | KeyCode::Char('v') => app.view_open = false,
-                            KeyCode::Char('T') => app.tree_view = !app.tree_view,
+                            KeyCode::Char('T') if !app.lock_theme => app.tree_view = !app.tree_view,
                             KeyCode::Char('l') => app.toggle_timeline(),
                             KeyCode::Char('f') => app.toggle_file_audit(),
                             KeyCode::Char(c @ '1'..='7') => app.toggle_panel(c as u8 - b'0'),
                             KeyCode::Char('M') => app.toggle_mcp_session_suppression(),
-                            KeyCode::Char('t') => app.cycle_theme(),
+                            KeyCode::Char('t') if !app.lock_theme => app.cycle_theme(),
+                            KeyCode::Char('t') => app.tree_view = !app.tree_view,
                             _ => {}
                         }
                     } else if app.config_open {
@@ -295,8 +300,9 @@ fn run_app(
                             KeyCode::Char('-') => app.restore_narrow_sections(),
                             KeyCode::Char('x') if !demo_mode => app.kill_selected(),
                             KeyCode::Char('X') if !demo_mode => app.kill_orphan_ports(),
-                            KeyCode::Char('t') => app.cycle_theme(),
-                            KeyCode::Char('T') => app.tree_view = !app.tree_view,
+                            KeyCode::Char('t') if !app.lock_theme => app.cycle_theme(),
+                            KeyCode::Char('t') => app.tree_view = !app.tree_view,
+                            KeyCode::Char('T') if !app.lock_theme => app.tree_view = !app.tree_view,
                             KeyCode::Char('l') | KeyCode::Char('L') => app.toggle_timeline(),
                             KeyCode::Char(c @ '1'..='7') => app.toggle_panel(c as u8 - b'0'),
                             KeyCode::Char('M') => app.toggle_mcp_session_suppression(),

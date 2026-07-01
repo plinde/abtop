@@ -37,6 +37,9 @@ pub struct AppConfig {
     /// UI language override. Empty string means auto-detect from `LANG`.
     /// Recognized values: "en", "zh" (anything starting with "zh" maps to Simplified Chinese).
     pub language: String,
+    /// When true, the `t` hotkey is rebound from cycle-theme to toggle-tree-view.
+    /// Theme can still be changed via config menu (`c`) or config.toml.
+    pub lock_theme: bool,
 }
 
 impl Default for AppConfig {
@@ -47,6 +50,7 @@ impl Default for AppConfig {
             claude_config_dirs: Vec::new(),
             panels: PanelVisibility::default(),
             language: String::new(),
+            lock_theme: false,
         }
     }
 }
@@ -104,6 +108,7 @@ fn parse_config_body(content: &str) -> AppConfig {
                 "show_ports" => config.panels.ports = parse_bool(val).unwrap_or(true),
                 "show_sessions" => config.panels.sessions = parse_bool(val).unwrap_or(true),
                 "show_mcp" => config.panels.mcp = parse_bool(val).unwrap_or(true),
+                "lock_theme" => config.lock_theme = parse_bool(val).unwrap_or(false),
                 _ => {}
             }
         }

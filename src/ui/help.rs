@@ -22,7 +22,7 @@ fn get_entries() -> Vec<(String, String)> {
         (t("help.views"), String::new()),
         ("  v".to_string(), t("help.view_menu")),
         ("  c".to_string(), t("help.open_config")),
-        ("  t / T".to_string(), t("help.cycle_theme")),
+        ("  T   tree view (or t when theme locked)".to_string(), String::new()),
         ("  l".to_string(), t("help.toggle_timeline")),
         ("  f".to_string(), t("help.toggle_file_audit")),
         ("  1-7".to_string(), t("help.toggle_panels")),

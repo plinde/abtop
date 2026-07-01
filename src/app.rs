@@ -134,6 +134,10 @@ pub struct App {
     pub config_open: bool,
     pub config_selected: usize,
     pub tree_view: bool,
+    /// When true, `t` toggles tree_view instead of cycling themes.
+    pub lock_theme: bool,
+    /// Additional dirs scanned for abtop-rate-limits.json (from config claude_config_dirs).
+    rate_limit_dirs: Vec<PathBuf>,
     pub filter_text: String,
     pub filter_active: bool,
     pub show_timeline: bool,
@@ -158,7 +162,7 @@ impl App {
         hidden_agents: &[String],
         panels: crate::config::PanelVisibility,
     ) -> Self {
-        Self::new_with_config_and_claude_dirs(theme, hidden_agents, panels, &[])
+        Self::new_with_config_and_claude_dirs(theme, hidden_agents, panels, &[], false)
     }
 
     pub fn new_with_config_and_claude_dirs(
@@ -166,6 +170,7 @@ impl App {
         hidden_agents: &[String],
         panels: crate::config::PanelVisibility,
         claude_config_dirs: &[PathBuf],
+        lock_theme: bool,
     ) -> Self {
         let (tx, rx) = mpsc::channel();
         let summaries = load_summary_cache();
@@ -205,6 +210,8 @@ impl App {
             config_open: false,
             config_selected: 0,
             tree_view: false,
+            lock_theme,
+            rate_limit_dirs: claude_config_dirs.to_vec(),
             filter_text: String::new(),
             filter_active: false,
             show_timeline: false,
@@ -538,7 +545,8 @@ impl App {
         // Poll rate limits: first tick immediately, then every 5 ticks ≈ 10s
         if self.rate_limits.is_empty() || self.rate_limit_counter >= 5 {
             self.rate_limit_counter = 0;
-            let extra_dirs = self.collector.all_config_dirs();
+            let mut extra_dirs = self.collector.all_config_dirs();
+            extra_dirs.extend_from_slice(&self.rate_limit_dirs);
             self.rate_limits = read_rate_limits(&extra_dirs);
             // Merge live rate limits from agent collectors (e.g. Codex JSONL parsing)
             self.rate_limits.extend(self.collector.agent_rate_limits());

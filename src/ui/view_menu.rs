@@ -19,7 +19,6 @@ pub(crate) struct ViewItem {
 pub(crate) enum ViewState {
     On,
     Off,
-    Action,
 }
 
 pub(crate) fn items(app: &App) -> Vec<ViewItem> {
@@ -83,8 +82,8 @@ pub(crate) fn items(app: &App) -> Vec<ViewItem> {
         },
         ViewItem {
             key: 't',
-            label: t("view.cycle_theme").leak(),
-            state: Action,
+            label: if app.lock_theme { t("view.tree_view").leak() } else { t("view.cycle_theme").leak() },
+            state: bool_state(app.lock_theme && app.tree_view),
         },
     ]
 }
@@ -126,14 +125,12 @@ pub(crate) fn draw_view_overlay(f: &mut Frame, app: &App, theme: &Theme) {
 
     let on_str = t("view.on");
     let off_str = t("view.off");
-    let action_str = t("view.action");
 
     let mut lines: Vec<Line> = Vec::with_capacity(entries.len() + 2);
     for item in &entries {
         let (state_str, state_style) = match item.state {
             ViewState::On => (on_str.clone(), Style::default().fg(theme.proc_misc)),
             ViewState::Off => (off_str.clone(), Style::default().fg(theme.inactive_fg)),
-            ViewState::Action => (action_str.clone(), Style::default().fg(theme.session_id)),
         };
         lines.push(Line::from(vec![
             Span::styled(

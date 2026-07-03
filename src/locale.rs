@@ -29,6 +29,7 @@ static LOCALE_EN: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
 
     // Column headers
     m.insert("col.ai", "AI");
+    m.insert("col.recent", "Recent");
     m.insert("col.pid", "Pid");
     m.insert("col.project", "Project");
     m.insert("col.session", "Session");
@@ -39,8 +40,17 @@ static LOCALE_EN: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("col.context", "Context");
     m.insert("col.ctx", "Ctx");
     m.insert("col.tokens", "Tokens");
+    m.insert("col.input", "Input");
+    m.insert("col.output", "Output");
+    m.insert("col.cache_r", "CacheR");
+    m.insert("col.cache_w", "CacheW");
     m.insert("col.memory", "Memory");
     m.insert("col.turn", "Turn");
+    m.insert("col.everything", "Everything");
+    m.insert("col.branch", "Branch");
+    m.insert("col.version", "Version");
+    m.insert("col.cwd", "Cwd");
+    m.insert("col.effort", "Effort");
     m.insert("col.config", "Config");
     m.insert("col.cfg", "Cfg");
 
@@ -115,6 +125,8 @@ static LOCALE_EN: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("help.select_session", "select session");
     m.insert("help.jump_tmux", "jump to session terminal");
     m.insert("help.filter", "filter sessions");
+    m.insert("help.sort", "sort sessions");
+    m.insert("help.sort_mode", "sort mode: left/right column, up/down direction");
     m.insert("help.clear_filter", "clear filter / close overlay");
     m.insert("help.kill_session", "kill selected session");
     m.insert("help.kill_orphans", "kill orphan ports");
@@ -147,6 +159,7 @@ static LOCALE_EN: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("footer.quit", "quit");
     m.insert("footer.sessions", "sessions");
     m.insert("footer.auto", "auto");
+    m.insert("footer.sort_mode", "sort: left/right column, up/down direction, Esc/o done");
     m.insert("footer.zoom_out", "Esc zoom out");
     m.insert("footer.peak_hours", "Claude Peak Hours");
     m.insert("footer.resets_in", "resets in");
@@ -243,6 +256,7 @@ static LOCALE_EN: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("config.ports_panel", "Ports panel (5)");
     m.insert("config.sessions_panel", "Sessions panel (6)");
     m.insert("config.mcp_panel", "MCP servers (7)");
+    m.insert("config.column", "Column");
 
     // Terminal size too small
     m.insert("term.too_small", "Terminal size too small:");
@@ -280,6 +294,7 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
 
     // Column headers
     m.insert("col.ai", "AI");
+    m.insert("col.recent", "Recent");
     m.insert("col.pid", "PID");
     m.insert("col.project", "项目");
     m.insert("col.session", "会话");
@@ -290,8 +305,17 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("col.context", "上下文");
     m.insert("col.ctx", "上");
     m.insert("col.tokens", "Token");
+    m.insert("col.input", "Input");
+    m.insert("col.output", "Output");
+    m.insert("col.cache_r", "CacheR");
+    m.insert("col.cache_w", "CacheW");
     m.insert("col.memory", "内存");
     m.insert("col.turn", "轮");
+    m.insert("col.everything", "Everything");
+    m.insert("col.branch", "Branch");
+    m.insert("col.version", "Version");
+    m.insert("col.cwd", "Cwd");
+    m.insert("col.effort", "Effort");
     m.insert("col.config", "配置");
     m.insert("col.cfg", "配");
 
@@ -366,6 +390,8 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("help.select_session", "选择会话");
     m.insert("help.jump_tmux", "jump to session terminal");
     m.insert("help.filter", "过滤会话");
+    m.insert("help.sort", "sort sessions");
+    m.insert("help.sort_mode", "sort mode: left/right column, up/down direction");
     m.insert("help.clear_filter", "清除过滤 / 关闭覆盖");
     m.insert("help.kill_session", "终止选中的会话");
     m.insert("help.kill_orphans", "终止孤立端口");
@@ -395,6 +421,7 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("footer.quit", "退出");
     m.insert("footer.sessions", "会话");
     m.insert("footer.auto", "自动");
+    m.insert("footer.sort_mode", "sort: left/right column, up/down direction, Esc/o done");
     m.insert("footer.zoom_out", "Esc 缩小");
     m.insert("footer.peak_hours", "Claude 高峰时段");
     m.insert("footer.resets_in", "重置于");
@@ -491,6 +518,7 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("config.ports_panel", "端口面板 (5)");
     m.insert("config.sessions_panel", "会话面板 (6)");
     m.insert("config.mcp_panel", "MCP 服务器 (7)");
+    m.insert("config.column", "Column");
 
     // Terminal size too small
     m.insert("term.too_small", "终端尺寸过小:");

@@ -134,6 +134,10 @@ pub struct AgentSession {
     pub cwd: String,
     pub project_name: String,
     pub started_at: u64,
+    /// Unix-epoch ms of the most recent transcript/database turn or activity.
+    /// Falls back to `started_at` when the source does not expose a better
+    /// timestamp.
+    pub last_turn_at: u64,
     pub status: SessionStatus,
     pub model: String,
     /// Reasoning effort setting (Codex CLI only: "minimal" | "low" | "medium" | "high").
@@ -220,6 +224,28 @@ impl AgentSession {
             format!("{}h {}m", secs / 3600, (secs % 3600) / 60)
         }
     }
+
+    pub fn last_turn_age(&self) -> Duration {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let last_turn_at = self.last_turn_at.max(self.started_at);
+        Duration::from_millis(now.saturating_sub(last_turn_at))
+    }
+
+    pub fn last_turn_display(&self) -> String {
+        let secs = self.last_turn_age().as_secs();
+        if secs < 60 {
+            format!("{}s", secs)
+        } else if secs < 3600 {
+            format!("{}m", secs / 60)
+        } else if secs < 86_400 {
+            format!("{}h", secs / 3600)
+        } else {
+            format!("{}d", secs / 86_400)
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -264,6 +290,7 @@ mod tests {
             cwd: String::new(),
             project_name: String::new(),
             started_at: 0,
+            last_turn_at: 0,
             status: SessionStatus::Waiting,
             model: String::new(),
             effort: String::new(),

@@ -120,6 +120,10 @@ pub struct SessionView {
     pub cache_create_tokens: u64,
     /// Number of user/assistant turns observed.
     pub turn_count: u32,
+    /// Most recent turn/activity timestamp, Unix-epoch milliseconds.
+    pub last_turn_at_ms: u64,
+    /// Wall-clock seconds since `last_turn_at_ms`.
+    pub last_turn_age_secs: u64,
     /// Resident memory of the session process tree, in MiB.
     pub mem_mb: u64,
     /// Current git branch of `cwd`, or empty when not a repo.
@@ -219,6 +223,8 @@ impl App {
                 cache_read_tokens: s.total_cache_read,
                 cache_create_tokens: s.total_cache_create,
                 turn_count: s.turn_count,
+                last_turn_at_ms: s.last_turn_at,
+                last_turn_age_secs: s.last_turn_age().as_secs(),
                 mem_mb: s.mem_mb,
                 git_branch: s.git_branch.clone(),
                 git_added: s.git_added,

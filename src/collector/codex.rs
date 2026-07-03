@@ -626,6 +626,12 @@ impl CodexCollector {
         // Git stats: populated by MultiCollector on slow ticks
         let (git_added, git_modified) = (0, 0);
         let rate_limit = result.rate_limit.clone();
+        let last_turn_at = result
+            .last_activity
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0)
+            .max(result.started_at);
 
         Some((
             AgentSession {
@@ -635,6 +641,7 @@ impl CodexCollector {
                 cwd: result.cwd,
                 project_name,
                 started_at: result.started_at,
+                last_turn_at,
                 status,
                 model: result.model,
                 effort: result.effort,

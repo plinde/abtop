@@ -294,6 +294,7 @@ pub(crate) enum ClickTarget {
     NarrowZoom(NarrowSection),
     Focus(NarrowSection),
     Session(usize),
+    SessionSort(crate::app::SessionSortColumn),
     KillOrphanPorts,
 }
 
@@ -786,6 +787,9 @@ pub(crate) fn click_target(app: &App, area: Rect, column: u16, row: u16) -> Opti
                 if zoom_button_at(sessions_area, column, row) {
                     return Some(ClickTarget::NarrowZoom(NarrowSection::Sessions));
                 }
+                if let Some(column) = sessions::sort_column_at(app, sessions_area, column, row) {
+                    return Some(ClickTarget::SessionSort(column));
+                }
                 if in_header(sessions_area, row) {
                     return Some(ClickTarget::NarrowSection(NarrowSection::Sessions));
                 }
@@ -831,6 +835,9 @@ pub(crate) fn click_target(app: &App, area: Rect, column: u16, row: u16) -> Opti
                 if let Some(index) = session_at(app, section_area, row) {
                     return Some(ClickTarget::Session(index));
                 }
+                if let Some(column) = sessions::sort_column_at(app, section_area, column, row) {
+                    return Some(ClickTarget::SessionSort(column));
+                }
             }
             if section == NarrowSection::Ports && ports_kill_at(app, section_area, row) {
                 return Some(ClickTarget::KillOrphanPorts);
@@ -843,6 +850,28 @@ pub(crate) fn click_target(app: &App, area: Rect, column: u16, row: u16) -> Opti
     }
 
     None
+}
+
+pub(crate) fn visible_session_sort_columns(
+    app: &App,
+    area: Rect,
+) -> Vec<crate::app::SessionSortColumn> {
+    if area.width >= DESKTOP_WIDTH {
+        return desktop_layout(app, area)
+            .sessions
+            .map(|sessions_area| sessions::visible_sort_columns(app, sessions_area))
+            .unwrap_or_default();
+    }
+
+    let chunks = narrow_chunks(area);
+    let Some(tab) = app.active_narrow_tab() else {
+        return Vec::new();
+    };
+    narrow_section_areas(app, tab, chunks[1])
+        .into_iter()
+        .find(|(section, _)| *section == NarrowSection::Sessions)
+        .map(|(_, sessions_area)| sessions::visible_sort_columns(app, sessions_area))
+        .unwrap_or_default()
 }
 
 fn zoom_button_area(area: Rect) -> Option<Rect> {
@@ -941,7 +970,7 @@ fn session_at(app: &App, area: Rect, row: u16) -> Option<usize> {
     } else if inner_h <= 12 {
         6.min(inner_h.saturating_sub(3))
     } else {
-        10.min(inner_h / 2)
+        10.min(inner_h.saturating_sub(3))
     };
     let max_table = inner_h.saturating_sub(detail_reserve);
     let table_h = (1 + session_rows).min(max_table);
@@ -1381,6 +1410,73 @@ mod tests {
         assert_eq!(
             click_target(&app, area, ports_area.x + 2, kill_row),
             Some(ClickTarget::KillOrphanPorts)
+        );
+    }
+
+    #[test]
+    fn desktop_click_targets_session_header_sort() {
+        let mut app = App::new_with_config(Theme::default(), &[], PanelVisibility::default());
+        crate::demo::populate_demo(&mut app);
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 140,
+            height: 40,
+        };
+        let sessions_area = desktop_layout(&app, area).sessions.unwrap();
+
+        assert_eq!(
+            click_target(&app, area, sessions_area.x + 2, sessions_area.y + 1),
+            Some(ClickTarget::SessionSort(crate::app::SessionSortColumn::Ai))
+        );
+        assert_eq!(
+            click_target(&app, area, sessions_area.x + 6, sessions_area.y + 1),
+            Some(ClickTarget::SessionSort(
+                crate::app::SessionSortColumn::Recent
+            ))
+        );
+        assert_eq!(
+            click_target(&app, area, sessions_area.x + 20, sessions_area.y + 1),
+            Some(ClickTarget::SessionSort(
+                crate::app::SessionSortColumn::Project
+            ))
+        );
+    }
+
+    #[test]
+    fn visible_session_sort_columns_skip_hidden_columns_but_keep_status() {
+        let mut app = App::new_with_config(Theme::default(), &[], PanelVisibility::default());
+        crate::demo::populate_demo(&mut app);
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 86,
+            height: 32,
+        };
+
+        let columns = visible_session_sort_columns(&app, area);
+
+        assert!(columns.contains(&crate::app::SessionSortColumn::Session));
+        assert!(columns.contains(&crate::app::SessionSortColumn::Summary));
+        assert!(columns.contains(&crate::app::SessionSortColumn::Status));
+        assert!(!columns.contains(&crate::app::SessionSortColumn::Config));
+        assert!(!columns.contains(&crate::app::SessionSortColumn::Model));
+    }
+
+    #[test]
+    fn status_sort_marker_stays_visible_in_narrow_header() {
+        let mut app = App::new_with_config(Theme::default(), &[], PanelVisibility::default());
+        crate::demo::populate_demo(&mut app);
+        app.toggle_session_sort(crate::app::SessionSortColumn::Status);
+
+        let backend = TestBackend::new(100, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| draw(f, &app)).unwrap();
+        let text = format!("{}", terminal.backend());
+
+        assert!(
+            text.contains("↑Stat"),
+            "status sort marker should be prefixed before truncation\n{text}"
         );
     }
 

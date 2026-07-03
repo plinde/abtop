@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::{App, SessionSortColumn};
 use crate::locale::t;
 use crate::theme::Theme;
 use ratatui::layout::{Alignment, Rect};
@@ -10,8 +10,8 @@ use ratatui::Frame;
 pub(crate) fn draw_config_overlay(f: &mut Frame, app: &App, theme: &Theme) {
     let area = f.area();
 
-    let popup_w = 50u16.min(area.width.saturating_sub(4));
-    let popup_h = 15u16.min(area.height.saturating_sub(4));
+    let popup_w = 58u16.min(area.width.saturating_sub(4));
+    let popup_h = 28u16.min(area.height.saturating_sub(4));
     let x = (area.width.saturating_sub(popup_w)) / 2;
     let y = (area.height.saturating_sub(popup_h)) / 2;
     let popup = Rect::new(x, y, popup_w, popup_h);
@@ -45,7 +45,7 @@ pub(crate) fn draw_config_overlay(f: &mut Frame, app: &App, theme: &Theme) {
     let theme_label = t("config.theme");
     let on_str = t("config.on");
     let off_str = t("config.off");
-    let items: Vec<(String, String)> = vec![
+    let mut items: Vec<(String, String)> = vec![
         (theme_label, app.theme.name.to_string()),
         (
             t("config.context_panel"),
@@ -76,11 +76,28 @@ pub(crate) fn draw_config_overlay(f: &mut Frame, app: &App, theme: &Theme) {
             toggle_str(&on_str, &off_str, app.show_mcp),
         ),
     ];
+    for &column in &SessionSortColumn::ALL {
+        items.push((
+            format!("{} {}", t("config.column"), column.label()),
+            toggle_str(&on_str, &off_str, app.session_column_enabled(column)),
+        ));
+    }
 
     let mut lines = Vec::new();
     lines.push(Line::from(""));
 
-    for (i, (label, value)) in items.iter().enumerate() {
+    let footer_lines = 2usize;
+    let visible_count = (inner.height as usize)
+        .saturating_sub(footer_lines + 1)
+        .max(1);
+    let max_start = items.len().saturating_sub(visible_count);
+    let start = app
+        .config_selected
+        .saturating_sub(visible_count / 2)
+        .min(max_start);
+    let end = (start + visible_count).min(items.len());
+
+    for (i, (label, value)) in items.iter().enumerate().take(end).skip(start) {
         let selected = i == app.config_selected;
         let cursor = if selected { ">" } else { " " };
 
@@ -103,7 +120,7 @@ pub(crate) fn draw_config_overlay(f: &mut Frame, app: &App, theme: &Theme) {
             Style::default().fg(theme.session_id)
         };
 
-        let label_w = 22;
+        let label_w = 30;
         let padded_label = format!("{} {:<width$}", cursor, label, width = label_w);
         let padded_value = format!("{:<10}", value);
 
@@ -118,10 +135,12 @@ pub(crate) fn draw_config_overlay(f: &mut Frame, app: &App, theme: &Theme) {
     let close_label = t("config.close");
     lines.push(Line::from(Span::styled(
         format!(
-            " abtop v{}  {}  Esc {}",
+            " abtop v{}  {}  Esc {}  {}/{}",
             env!("CARGO_PKG_VERSION"),
             change_label,
-            close_label
+            close_label,
+            app.config_selected + 1,
+            items.len()
         ),
         Style::default().fg(theme.graph_text),
     )));

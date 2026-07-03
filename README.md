@@ -131,7 +131,27 @@ hidden_agents = ["codex"]
 claude_config_dirs = ["~/.claude-personal", "~/.claude-work-team"]
 # UI language. Omit or leave empty to auto-detect from LANG.
 language = "zh"
+# Ordered session overview columns. Unknown names are ignored; when omitted,
+# abtop uses its default set and shows as many as the terminal width allows.
+session_columns = [
+  "ai", "recent", "pid", "project", "session", "config", "summary", "status",
+  "model", "context", "tokens", "input", "output", "cache_r",
+  "cache_w", "memory", "turn", "everything",
+]
 ```
+
+`recent` shows the age of the most recent turn or activity for the session.
+`tokens` means active tokens (`input + output + cache_w`). `everything` means
+all tokens including `cache_r` and `cache_w`. Additional available columns are
+`branch`, `version`, `cwd`, and `effort`. Press `c` in the TUI to toggle
+columns without editing the file directly.
+
+Session columns are sortable from the table header with the mouse, or from the
+keyboard by pressing `o` to enter sort mode. In sort mode, `←`/`→` selects the
+sort column, `↑` sorts ascending, `↓` sorts descending, and `Esc`, `Enter`, or
+`o` exits sort mode. The `recent`, token, memory, turn-count, and total-token
+columns default to descending order; text and status columns default to
+ascending order. `O` reverses the current sort without entering sort mode.
 
 ### Supported Languages
 
@@ -148,6 +168,10 @@ When `language` is unset, abtop auto-detects from `LANG` — any value starting 
 | ------------------ | ------------------------------------ |
 | `↑`/`↓` or `k`/`j` | Select session                       |
 | `Enter`            | Jump to session terminal             |
+| `o`                | Enter/exit session sort mode          |
+| `O`                | Reverse current session sort          |
+| `←`/`→` in sort mode | Select sort column                  |
+| `↑`/`↓` in sort mode | Set sort direction                  |
 | `x`                | Kill selected session                |
 | `X`                | Kill all orphan ports                |
 | `t`                | Cycle theme                          |

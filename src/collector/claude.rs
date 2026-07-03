@@ -526,6 +526,12 @@ impl ClaudeCollector {
         let token_history = cached.token_history.clone();
         let context_history = cached.context_history.clone();
         let compaction_count = cached.compaction_count;
+        let last_turn_at = cached
+            .last_activity
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0)
+            .max(sf.started_at);
         let initial_prompt = cached.initial_prompt.clone();
         let first_assistant_text = cached.first_assistant_text.clone();
         let chat_messages = cached.chat_messages.clone();
@@ -643,6 +649,7 @@ impl ClaudeCollector {
             cwd: sf.cwd,
             project_name,
             started_at: sf.started_at,
+            last_turn_at,
             status,
             model,
             effort,

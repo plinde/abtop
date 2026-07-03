@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::app::SessionSortColumn;
+
 #[derive(Clone, Copy)]
 pub struct PanelVisibility {
     pub context: bool,
@@ -34,6 +36,8 @@ pub struct AppConfig {
     /// Useful for multi-profile setups that use separate CLAUDE_CONFIG_DIR roots.
     pub claude_config_dirs: Vec<PathBuf>,
     pub panels: PanelVisibility,
+    /// Ordered list of session overview columns to show when space allows.
+    pub session_columns: Vec<String>,
     /// UI language override. Empty string means auto-detect from `LANG`.
     /// Recognized values: "en", "zh" (anything starting with "zh" maps to Simplified Chinese).
     pub language: String,
@@ -49,6 +53,7 @@ impl Default for AppConfig {
             hidden_agents: Vec::new(),
             claude_config_dirs: Vec::new(),
             panels: PanelVisibility::default(),
+            session_columns: Vec::new(),
             language: String::new(),
             lock_theme: false,
         }
@@ -95,6 +100,10 @@ fn parse_config_body(content: &str) -> AppConfig {
             }
             if key == "claude_config_dirs" {
                 config.claude_config_dirs = parse_path_array(val);
+                continue;
+            }
+            if key == "session_columns" {
+                config.session_columns = parse_string_array(val);
                 continue;
             }
             let val = val.trim_matches('"').trim_matches('\'');
@@ -173,6 +182,15 @@ pub fn save_panel_visibility(panels: &PanelVisibility) -> Result<(), String> {
         ("show_sessions", panels.sessions.to_string()),
         ("show_mcp", panels.mcp.to_string()),
     ])
+}
+
+pub fn save_session_columns(columns: &[SessionSortColumn]) -> Result<(), String> {
+    let rendered = columns
+        .iter()
+        .map(|column| format!("\"{}\"", column.id()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    write_with_updates(&[("session_columns", format!("[{}]", rendered))])
 }
 
 /// Read the config, replace or append each (key, value) pair, write it back.
@@ -267,6 +285,13 @@ mod tests {
         assert_eq!(cfg.claude_config_dirs, vec![home.join(".claude-personal")]);
     }
 
+    #[test]
+    fn parse_config_body_loads_session_columns() {
+        let cfg = parse_config_body(r#"session_columns = ["ai", "cache_r", "everything"]"#);
+
+        assert_eq!(cfg.session_columns, vec!["ai", "cache_r", "everything"]);
+    }
+
     fn theme_update(name: &str) -> Vec<(&'static str, String)> {
         vec![("theme", format!("\"{}\"", name))]
     }
@@ -345,6 +370,17 @@ mod tests {
         let after = rewrite_kv_lines(before, &updates);
         assert!(after.contains("language = \"zh\""));
         assert!(!after.contains("language = \"en\""));
+        assert!(after.contains("theme = \"btop\""));
+    }
+
+    #[test]
+    fn rewrite_session_columns_replaces_existing() {
+        let before = "theme = \"btop\"\nsession_columns = [\"ai\"]\n";
+        let updates: Vec<(&str, String)> =
+            vec![("session_columns", "[\"ai\", \"cache_r\"]".to_string())];
+        let after = rewrite_kv_lines(before, &updates);
+        assert!(after.contains("session_columns = [\"ai\", \"cache_r\"]"));
+        assert!(!after.contains("session_columns = [\"ai\"]"));
         assert!(after.contains("theme = \"btop\""));
     }
 }

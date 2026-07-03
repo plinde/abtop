@@ -13,6 +13,8 @@ fn get_entries() -> Vec<(String, String)> {
         ("  ↑↓ / j k".to_string(), t("help.select_session")),
         ("  ↵".to_string(), t("help.jump_tmux")),
         ("  /".to_string(), t("help.filter")),
+        ("  o".to_string(), t("help.sort")),
+        ("  ←→ / ↑↓".to_string(), t("help.sort_mode")),
         ("  Esc".to_string(), t("help.clear_filter")),
         (t("help.actions"), String::new()),
         ("  x".to_string(), t("help.kill_session")),

@@ -200,6 +200,7 @@ impl OpenCodeCollector {
                 cwd: ds.directory.clone(),
                 project_name,
                 started_at: ds.time_created,
+                last_turn_at: ds.time_updated.max(ds.time_created),
                 status,
                 model,
                 effort: String::new(),

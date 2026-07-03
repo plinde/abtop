@@ -2,6 +2,7 @@ use crate::collector::{read_rate_limits, McpServer, MultiCollector};
 use crate::host_info::{AgentAggregate, HostMetrics, HostSampler};
 use crate::model::{AgentSession, OrphanPort, RateLimitInfo, SessionStatus};
 use crate::theme::Theme;
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -84,9 +85,203 @@ impl NarrowSection {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SessionSortColumn {
+    Ai,
+    Recent,
+    Pid,
+    Project,
+    Session,
+    Config,
+    Summary,
+    Status,
+    Model,
+    Context,
+    Tokens,
+    Input,
+    Output,
+    CacheRead,
+    CacheWrite,
+    Memory,
+    Turn,
+    Everything,
+    Branch,
+    Version,
+    Cwd,
+    Effort,
+}
+
+impl SessionSortColumn {
+    pub const ALL: [Self; 22] = [
+        Self::Ai,
+        Self::Recent,
+        Self::Pid,
+        Self::Project,
+        Self::Session,
+        Self::Config,
+        Self::Summary,
+        Self::Status,
+        Self::Model,
+        Self::Context,
+        Self::Tokens,
+        Self::Input,
+        Self::Output,
+        Self::CacheRead,
+        Self::CacheWrite,
+        Self::Memory,
+        Self::Turn,
+        Self::Everything,
+        Self::Branch,
+        Self::Version,
+        Self::Cwd,
+        Self::Effort,
+    ];
+
+    pub const DEFAULT_COLUMNS: [Self; 18] = [
+        Self::Ai,
+        Self::Recent,
+        Self::Pid,
+        Self::Project,
+        Self::Session,
+        Self::Config,
+        Self::Summary,
+        Self::Status,
+        Self::Model,
+        Self::Context,
+        Self::Tokens,
+        Self::Input,
+        Self::Output,
+        Self::CacheRead,
+        Self::CacheWrite,
+        Self::Memory,
+        Self::Turn,
+        Self::Everything,
+    ];
+
+    fn default_ascending(self) -> bool {
+        match self {
+            Self::Context
+            | Self::Recent
+            | Self::Tokens
+            | Self::Input
+            | Self::Output
+            | Self::CacheRead
+            | Self::CacheWrite
+            | Self::Memory
+            | Self::Turn
+            | Self::Everything => false,
+            Self::Ai
+            | Self::Pid
+            | Self::Project
+            | Self::Session
+            | Self::Config
+            | Self::Summary
+            | Self::Status
+            | Self::Model
+            | Self::Branch
+            | Self::Version
+            | Self::Cwd
+            | Self::Effort => true,
+        }
+    }
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Ai => "ai",
+            Self::Recent => "recent",
+            Self::Pid => "pid",
+            Self::Project => "project",
+            Self::Session => "session",
+            Self::Config => "config",
+            Self::Summary => "summary",
+            Self::Status => "status",
+            Self::Model => "model",
+            Self::Context => "context",
+            Self::Tokens => "tokens",
+            Self::Input => "input",
+            Self::Output => "output",
+            Self::CacheRead => "cache_r",
+            Self::CacheWrite => "cache_w",
+            Self::Memory => "memory",
+            Self::Turn => "turn",
+            Self::Everything => "everything",
+            Self::Branch => "branch",
+            Self::Version => "version",
+            Self::Cwd => "cwd",
+            Self::Effort => "effort",
+        }
+    }
+
+    pub fn from_id(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "ai" => Some(Self::Ai),
+            "recent" | "last" | "last_turn" | "last_turn_at" | "activity" => Some(Self::Recent),
+            "pid" => Some(Self::Pid),
+            "project" => Some(Self::Project),
+            "session" | "session_id" | "sess" => Some(Self::Session),
+            "config" | "cfg" => Some(Self::Config),
+            "summary" => Some(Self::Summary),
+            "status" => Some(Self::Status),
+            "model" => Some(Self::Model),
+            "context" | "ctx" => Some(Self::Context),
+            "tokens" | "active_tokens" => Some(Self::Tokens),
+            "input" | "input_tokens" => Some(Self::Input),
+            "output" | "output_tokens" => Some(Self::Output),
+            "cache_r" | "cache_read" | "cache_read_tokens" => Some(Self::CacheRead),
+            "cache_w" | "cache_write" | "cache_create" | "cache_creation_tokens" => {
+                Some(Self::CacheWrite)
+            }
+            "memory" | "mem" => Some(Self::Memory),
+            "turn" | "turns" => Some(Self::Turn),
+            "everything" | "total" | "total_tokens" => Some(Self::Everything),
+            "branch" | "git_branch" => Some(Self::Branch),
+            "version" => Some(Self::Version),
+            "cwd" | "path" => Some(Self::Cwd),
+            "effort" => Some(Self::Effort),
+            _ => None,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Ai => "AI",
+            Self::Recent => "Recent",
+            Self::Pid => "Pid",
+            Self::Project => "Project",
+            Self::Session => "Session",
+            Self::Config => "Config",
+            Self::Summary => "Summary",
+            Self::Status => "Status",
+            Self::Model => "Model",
+            Self::Context => "Context",
+            Self::Tokens => "Tokens",
+            Self::Input => "Input",
+            Self::Output => "Output",
+            Self::CacheRead => "CacheR",
+            Self::CacheWrite => "CacheW",
+            Self::Memory => "Memory",
+            Self::Turn => "Turn",
+            Self::Everything => "Everything",
+            Self::Branch => "Branch",
+            Self::Version => "Version",
+            Self::Cwd => "Cwd",
+            Self::Effort => "Effort",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SessionSort {
+    pub column: SessionSortColumn,
+    pub ascending: bool,
+}
+
 pub struct App {
     pub sessions: Vec<AgentSession>,
     pub selected: usize,
+    pub session_sort: Option<SessionSort>,
+    pub session_sort_mode: bool,
+    pub session_columns: Vec<SessionSortColumn>,
     pub should_quit: bool,
     /// Token rate per tick (delta). Ring buffer for the braille graph.
     pub token_rates: VecDeque<f64>,
@@ -174,6 +369,24 @@ impl App {
         claude_config_dirs: &[PathBuf],
         lock_theme: bool,
     ) -> Self {
+        Self::new_with_config_and_claude_dirs_and_columns(
+            theme,
+            hidden_agents,
+            panels,
+            claude_config_dirs,
+            lock_theme,
+            &[],
+        )
+    }
+
+    pub fn new_with_config_and_claude_dirs_and_columns(
+        theme: Theme,
+        hidden_agents: &[String],
+        panels: crate::config::PanelVisibility,
+        claude_config_dirs: &[PathBuf],
+        lock_theme: bool,
+        session_columns: &[String],
+    ) -> Self {
         let (tx, rx) = mpsc::channel();
         let summaries = load_summary_cache();
         let mut collector =
@@ -182,6 +395,9 @@ impl App {
         Self {
             sessions: Vec::new(),
             selected: 0,
+            session_sort: None,
+            session_sort_mode: false,
+            session_columns: normalize_session_columns(session_columns),
             should_quit: false,
             token_rates: VecDeque::with_capacity(GRAPH_HISTORY_LEN),
             rate_limits: Vec::new(),
@@ -298,7 +514,7 @@ impl App {
     }
 
     pub fn config_item_count(&self) -> usize {
-        8 // theme + 7 panel toggles
+        8 + SessionSortColumn::ALL.len() // theme + 7 panel toggles + session columns
     }
 
     pub fn config_select_next(&mut self) {
@@ -324,10 +540,42 @@ impl App {
             5 => self.show_ports = !self.show_ports,
             6 => self.show_sessions = !self.show_sessions,
             7 => self.show_mcp = !self.show_mcp,
-            _ => return,
+            idx => {
+                let column_idx = idx.saturating_sub(8);
+                let Some(&column) = SessionSortColumn::ALL.get(column_idx) else {
+                    return;
+                };
+                self.toggle_session_column(column);
+                return;
+            }
         }
         self.persist_panel_visibility();
         self.clamp_narrow_tab();
+    }
+
+    pub fn session_column_enabled(&self, column: SessionSortColumn) -> bool {
+        self.session_columns.contains(&column)
+    }
+
+    pub fn toggle_session_column(&mut self, column: SessionSortColumn) {
+        if let Some(pos) = self.session_columns.iter().position(|&c| c == column) {
+            if self.session_columns.len() == 1 {
+                self.set_status("keep at least one session column".to_string());
+                return;
+            }
+            self.session_columns.remove(pos);
+        } else {
+            self.session_columns.push(column);
+            self.session_columns
+                .sort_by_key(|column| session_column_order(*column));
+        }
+        self.persist_session_columns();
+    }
+
+    fn persist_session_columns(&mut self) {
+        if let Err(e) = crate::config::save_session_columns(&self.session_columns) {
+            self.set_status(format!("columns save failed: {}", e));
+        }
     }
 
     pub fn narrow_tab_visible(&self, tab: NarrowTab) -> bool {
@@ -557,14 +805,25 @@ impl App {
     /// consumers (e.g. the web snapshot API) call this variant so they never
     /// spawn subprocesses or consume the user's Claude quota.
     pub fn tick_no_summaries(&mut self) {
+        let selected_key = self
+            .sessions
+            .get(self.selected)
+            .map(|s| (s.agent_cli, s.session_id.clone(), s.pid));
         self.collector.set_mcp_suppress(self.mcp_suppress_sessions);
         self.sessions = self.collector.collect();
         self.orphan_ports = self.collector.orphan_ports.clone();
         self.mcp_servers = self.collector.mcp_servers.clone();
         self.host_metrics = self.host_sampler.sample();
         self.agent_aggregate = AgentAggregate::from_sessions(&self.sessions);
+        if let Some((agent_cli, session_id, pid)) = selected_key {
+            if let Some(idx) = self.sessions.iter().position(|s| {
+                s.agent_cli == agent_cli && s.session_id == session_id && s.pid == pid
+            }) {
+                self.selected = idx;
+            }
+        }
         if self.selected >= self.sessions.len() && !self.sessions.is_empty() {
-            self.selected = self.sessions.len() - 1;
+            self.selected = self.visible_indices().first().copied().unwrap_or(0);
         }
         self.clamp_selection_to_visible();
 
@@ -677,16 +936,225 @@ impl App {
 
     /// Returns indices of sessions matching the current filter.
     pub fn visible_indices(&self) -> Vec<usize> {
-        if self.filter_text.is_empty() {
-            return (0..self.sessions.len()).collect();
+        let mut indices: Vec<usize> = if self.filter_text.is_empty() {
+            (0..self.sessions.len()).collect()
+        } else {
+            let query = self.filter_text.to_lowercase();
+            self.sessions
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| Self::session_matches(s, &query))
+                .map(|(i, _)| i)
+                .collect()
+        };
+
+        if let Some(sort) = self.session_sort {
+            indices.sort_by(|&a, &b| self.compare_sessions(a, b, sort));
         }
-        let query = self.filter_text.to_lowercase();
-        self.sessions
+
+        indices
+    }
+
+    fn compare_sessions(&self, a: usize, b: usize, sort: SessionSort) -> Ordering {
+        let lhs = &self.sessions[a];
+        let rhs = &self.sessions[b];
+        let mut ord = match sort.column {
+            SessionSortColumn::Ai => cmp_str(lhs.agent_cli, rhs.agent_cli),
+            SessionSortColumn::Recent => lhs.last_turn_at.cmp(&rhs.last_turn_at),
+            SessionSortColumn::Pid => lhs.pid.cmp(&rhs.pid),
+            SessionSortColumn::Project => cmp_str(&lhs.project_name, &rhs.project_name),
+            SessionSortColumn::Session => cmp_str(&lhs.session_id, &rhs.session_id),
+            SessionSortColumn::Config => cmp_str(&lhs.config_root, &rhs.config_root),
+            SessionSortColumn::Summary => {
+                cmp_str(&self.session_summary(lhs), &self.session_summary(rhs))
+            }
+            SessionSortColumn::Status => status_rank(&lhs.status).cmp(&status_rank(&rhs.status)),
+            SessionSortColumn::Model => cmp_str(&lhs.model, &rhs.model),
+            SessionSortColumn::Context => lhs.context_percent.total_cmp(&rhs.context_percent),
+            SessionSortColumn::Tokens => lhs.active_tokens().cmp(&rhs.active_tokens()),
+            SessionSortColumn::Input => lhs.total_input_tokens.cmp(&rhs.total_input_tokens),
+            SessionSortColumn::Output => lhs.total_output_tokens.cmp(&rhs.total_output_tokens),
+            SessionSortColumn::CacheRead => lhs.total_cache_read.cmp(&rhs.total_cache_read),
+            SessionSortColumn::CacheWrite => lhs.total_cache_create.cmp(&rhs.total_cache_create),
+            SessionSortColumn::Memory => lhs.mem_mb.cmp(&rhs.mem_mb),
+            SessionSortColumn::Turn => lhs.turn_count.cmp(&rhs.turn_count),
+            SessionSortColumn::Everything => lhs.total_tokens().cmp(&rhs.total_tokens()),
+            SessionSortColumn::Branch => cmp_str(&lhs.git_branch, &rhs.git_branch),
+            SessionSortColumn::Version => cmp_str(&lhs.version, &rhs.version),
+            SessionSortColumn::Cwd => cmp_str(&lhs.cwd, &rhs.cwd),
+            SessionSortColumn::Effort => cmp_str(&lhs.effort, &rhs.effort),
+        };
+
+        if !sort.ascending {
+            ord = ord.reverse();
+        }
+
+        ord.then_with(|| rhs.started_at.cmp(&lhs.started_at))
+            .then_with(|| lhs.agent_cli.cmp(rhs.agent_cli))
+            .then_with(|| lhs.session_id.cmp(&rhs.session_id))
+            .then_with(|| lhs.pid.cmp(&rhs.pid))
+    }
+
+    pub fn toggle_session_sort(&mut self, column: SessionSortColumn) {
+        let next = match self.session_sort {
+            Some(current) if current.column == column => SessionSort {
+                column,
+                ascending: !current.ascending,
+            },
+            _ => SessionSort {
+                column,
+                ascending: column.default_ascending(),
+            },
+        };
+        self.session_sort = Some(next);
+        self.clamp_selection_to_visible();
+        let direction = if next.ascending { "ascending" } else { "descending" };
+        self.set_status(format!("sort: {} {}", column.label(), direction));
+    }
+
+    pub fn toggle_session_sort_mode(&mut self) {
+        self.session_sort_mode = !self.session_sort_mode;
+        if self.session_sort_mode && self.session_sort.is_none() {
+            self.set_session_sort(
+                SessionSortColumn::Recent,
+                SessionSortColumn::Recent.default_ascending(),
+            );
+        } else if self.session_sort_mode {
+            self.set_sort_status();
+        }
+    }
+
+    pub fn close_session_sort_mode(&mut self) {
+        self.session_sort_mode = false;
+    }
+
+    pub fn select_next_session_sort_column(&mut self) {
+        self.select_next_session_sort_column_from(&SessionSortColumn::ALL);
+    }
+
+    pub fn select_prev_session_sort_column(&mut self) {
+        self.select_prev_session_sort_column_from(&SessionSortColumn::ALL);
+    }
+
+    pub fn select_next_session_sort_column_from(&mut self, columns: &[SessionSortColumn]) {
+        self.shift_session_sort_column(columns, 1);
+    }
+
+    pub fn select_prev_session_sort_column_from(&mut self, columns: &[SessionSortColumn]) {
+        self.shift_session_sort_column(columns, -1);
+    }
+
+    pub fn ensure_session_sort_column_in(&mut self, columns: &[SessionSortColumn]) {
+        if columns.is_empty() {
+            return;
+        }
+        let current = self.session_sort.map(|sort| sort.column);
+        if current.is_none_or(|column| !columns.contains(&column)) {
+            let column = columns[0];
+            self.set_session_sort(column, column.default_ascending());
+        }
+    }
+
+    fn shift_session_sort_column(&mut self, columns: &[SessionSortColumn], delta: isize) {
+        if columns.is_empty() {
+            return;
+        }
+        let current = self.session_sort.unwrap_or(SessionSort {
+            column: SessionSortColumn::Recent,
+            ascending: SessionSortColumn::Recent.default_ascending(),
+        });
+        let pos = columns
             .iter()
-            .enumerate()
-            .filter(|(_, s)| Self::session_matches(s, &query))
-            .map(|(i, _)| i)
-            .collect()
+            .position(|&column| column == current.column)
+            .unwrap_or_else(|| {
+                if delta >= 0 {
+                    0
+                } else {
+                    columns.len().saturating_sub(1)
+                }
+            });
+        let len = columns.len() as isize;
+        let next = (pos as isize + delta).rem_euclid(len) as usize;
+        let column = columns[next];
+        self.set_session_sort(column, column.default_ascending());
+    }
+
+    pub fn set_session_sort_ascending(&mut self) {
+        let column = self
+            .session_sort
+            .map(|sort| sort.column)
+            .unwrap_or(SessionSortColumn::Recent);
+        self.set_session_sort(column, true);
+    }
+
+    pub fn set_session_sort_descending(&mut self) {
+        let column = self
+            .session_sort
+            .map(|sort| sort.column)
+            .unwrap_or(SessionSortColumn::Recent);
+        self.set_session_sort(column, false);
+    }
+
+    fn set_session_sort(&mut self, column: SessionSortColumn, ascending: bool) {
+        self.session_sort = Some(SessionSort { column, ascending });
+        self.clamp_selection_to_visible();
+        self.set_sort_status();
+    }
+
+    fn set_sort_status(&mut self) {
+        if let Some(sort) = self.session_sort {
+            let direction = if sort.ascending {
+                "ascending"
+            } else {
+                "descending"
+            };
+            self.set_status(format!("sort: {} {}", sort.column.label(), direction));
+        }
+    }
+
+    pub fn cycle_session_sort_column(&mut self) {
+        let next_column = match self.session_sort {
+            None => SessionSortColumn::Ai,
+            Some(sort) => {
+                let pos = SessionSortColumn::ALL
+                    .iter()
+                    .position(|&column| column == sort.column)
+                    .unwrap_or(0);
+                SessionSortColumn::ALL[(pos + 1) % SessionSortColumn::ALL.len()]
+            }
+        };
+        self.session_sort = Some(SessionSort {
+            column: next_column,
+            ascending: next_column.default_ascending(),
+        });
+        self.clamp_selection_to_visible();
+        let sort = self.session_sort.unwrap();
+        let direction = if sort.ascending {
+            "ascending"
+        } else {
+            "descending"
+        };
+        self.set_status(format!("sort: {} {}", sort.column.label(), direction));
+    }
+
+    pub fn reverse_session_sort(&mut self) {
+        let mut sort = self.session_sort.unwrap_or(SessionSort {
+            column: SessionSortColumn::Ai,
+            ascending: SessionSortColumn::Ai.default_ascending(),
+        });
+        sort.ascending = !sort.ascending;
+        self.session_sort = Some(sort);
+        self.clamp_selection_to_visible();
+        let direction = if sort.ascending { "ascending" } else { "descending" };
+        self.set_status(format!("sort: {} {}", sort.column.label(), direction));
+    }
+
+    pub fn session_sort_indicator(&self, column: SessionSortColumn) -> Option<&'static str> {
+        match self.session_sort {
+            Some(sort) if sort.column == column && sort.ascending => Some("↑"),
+            Some(sort) if sort.column == column => Some("↓"),
+            _ => None,
+        }
     }
 
     fn session_matches(s: &AgentSession, query: &str) -> bool {
@@ -695,6 +1163,7 @@ impl App {
             || s.session_id.to_lowercase().contains(query)
             || s.initial_prompt.to_lowercase().contains(query)
             || s.cwd.to_lowercase().contains(query)
+            || s.config_root.to_lowercase().contains(query)
             || format!("{:?}", s.status).to_lowercase().contains(query)
     }
 
@@ -1061,6 +1530,42 @@ fn is_killable_agent_command(cmd: &str) -> bool {
         && !(crate::collector::process::cmd_has_binary(cmd, "codex") && cmd.contains(" app-server"))
 }
 
+fn cmp_str(lhs: &str, rhs: &str) -> Ordering {
+    lhs.to_lowercase().cmp(&rhs.to_lowercase())
+}
+
+fn status_rank(status: &SessionStatus) -> u8 {
+    match status {
+        SessionStatus::Thinking => 0,
+        SessionStatus::Executing => 1,
+        SessionStatus::RateLimited => 2,
+        SessionStatus::Waiting => 3,
+        SessionStatus::Unknown => 4,
+        SessionStatus::Done => 5,
+    }
+}
+
+fn normalize_session_columns(raw: &[String]) -> Vec<SessionSortColumn> {
+    let mut columns = Vec::new();
+    for column in raw.iter().filter_map(|s| SessionSortColumn::from_id(s)) {
+        if !columns.contains(&column) {
+            columns.push(column);
+        }
+    }
+    if columns.is_empty() {
+        SessionSortColumn::DEFAULT_COLUMNS.to_vec()
+    } else {
+        columns
+    }
+}
+
+fn session_column_order(column: SessionSortColumn) -> usize {
+    SessionSortColumn::ALL
+        .iter()
+        .position(|&candidate| candidate == column)
+        .unwrap_or(usize::MAX)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1073,6 +1578,7 @@ mod tests {
             cwd: String::new(),
             project_name: String::new(),
             started_at: 0,
+            last_turn_at: 0,
             status: SessionStatus::Waiting,
             model: String::new(),
             effort: String::new(),
@@ -1135,6 +1641,194 @@ mod tests {
         let limits = vec![rate_limit("claude", 89.9)];
         promote_waiting_to_rate_limited(&mut sessions, &limits);
         assert_eq!(sessions[0].status, SessionStatus::Waiting);
+    }
+
+    #[test]
+    fn session_sort_orders_visible_indices_without_reordering_sessions() {
+        let mut app = App::new_with_config(
+            Theme::default(),
+            &[],
+            crate::config::PanelVisibility::default(),
+        );
+        let mut a = waiting_session("claude");
+        a.session_id = "a".into();
+        a.project_name = "zeta".into();
+        a.total_input_tokens = 10;
+        let mut b = waiting_session("codex");
+        b.session_id = "b".into();
+        b.project_name = "alpha".into();
+        b.total_input_tokens = 30;
+        app.sessions = vec![a, b];
+
+        app.toggle_session_sort(SessionSortColumn::Project);
+        assert_eq!(app.visible_indices(), vec![1, 0]);
+        assert_eq!(app.sessions[0].project_name, "zeta");
+
+        app.toggle_session_sort(SessionSortColumn::Project);
+        assert_eq!(app.visible_indices(), vec![0, 1]);
+    }
+
+    #[test]
+    fn token_and_everything_sort_are_distinct() {
+        let mut app = App::new_with_config(
+            Theme::default(),
+            &[],
+            crate::config::PanelVisibility::default(),
+        );
+        let mut active_heavy = waiting_session("claude");
+        active_heavy.session_id = "active".into();
+        active_heavy.total_input_tokens = 100;
+        active_heavy.total_output_tokens = 100;
+        active_heavy.total_cache_read = 0;
+        let mut cache_heavy = waiting_session("codex");
+        cache_heavy.session_id = "cache".into();
+        cache_heavy.total_input_tokens = 10;
+        cache_heavy.total_output_tokens = 10;
+        cache_heavy.total_cache_read = 1_000;
+        app.sessions = vec![active_heavy, cache_heavy];
+
+        app.toggle_session_sort(SessionSortColumn::Tokens);
+        assert_eq!(app.visible_indices(), vec![0, 1]);
+
+        app.toggle_session_sort(SessionSortColumn::Everything);
+        assert_eq!(app.visible_indices(), vec![1, 0]);
+    }
+
+    #[test]
+    fn status_sort_orders_by_activity_rank() {
+        let mut app = App::new_with_config(
+            Theme::default(),
+            &[],
+            crate::config::PanelVisibility::default(),
+        );
+        let mut done = waiting_session("claude");
+        done.session_id = "done".into();
+        done.status = SessionStatus::Done;
+        let mut executing = waiting_session("codex");
+        executing.session_id = "executing".into();
+        executing.status = SessionStatus::Executing;
+        let mut rate_limited = waiting_session("opencode");
+        rate_limited.session_id = "rate".into();
+        rate_limited.status = SessionStatus::RateLimited;
+        app.sessions = vec![done, executing, rate_limited];
+
+        app.toggle_session_sort(SessionSortColumn::Status);
+        assert_eq!(app.visible_indices(), vec![1, 2, 0]);
+
+        app.toggle_session_sort(SessionSortColumn::Status);
+        assert_eq!(app.visible_indices(), vec![0, 2, 1]);
+    }
+
+    #[test]
+    fn recent_sort_uses_last_turn_timestamp() {
+        let mut app = App::new_with_config(
+            Theme::default(),
+            &[],
+            crate::config::PanelVisibility::default(),
+        );
+        let mut oldest = waiting_session("claude");
+        oldest.session_id = "oldest".into();
+        oldest.started_at = 100;
+        oldest.last_turn_at = 200;
+        let mut newest = waiting_session("codex");
+        newest.session_id = "newest".into();
+        newest.started_at = 50;
+        newest.last_turn_at = 900;
+        app.sessions = vec![oldest, newest];
+
+        app.toggle_session_sort(SessionSortColumn::Recent);
+        assert_eq!(app.visible_indices(), vec![1, 0]);
+
+        app.set_session_sort_ascending();
+        assert_eq!(app.visible_indices(), vec![0, 1]);
+    }
+
+    #[test]
+    fn sort_mode_selects_column_and_direction_with_arrows() {
+        let mut app = App::new_with_config(
+            Theme::default(),
+            &[],
+            crate::config::PanelVisibility::default(),
+        );
+
+        app.toggle_session_sort_mode();
+        assert!(app.session_sort_mode);
+        assert_eq!(
+            app.session_sort,
+            Some(SessionSort {
+                column: SessionSortColumn::Recent,
+                ascending: false,
+            })
+        );
+
+        app.select_next_session_sort_column();
+        assert_eq!(app.session_sort.unwrap().column, SessionSortColumn::Pid);
+
+        app.set_session_sort_ascending();
+        assert!(app.session_sort.unwrap().ascending);
+
+        app.select_prev_session_sort_column();
+        assert_eq!(app.session_sort.unwrap().column, SessionSortColumn::Recent);
+        assert!(!app.session_sort.unwrap().ascending);
+
+        app.close_session_sort_mode();
+        assert!(!app.session_sort_mode);
+    }
+
+    #[test]
+    fn sort_mode_can_cycle_only_rendered_columns() {
+        let mut app = App::new_with_config(
+            Theme::default(),
+            &[],
+            crate::config::PanelVisibility::default(),
+        );
+        let rendered = [
+            SessionSortColumn::Ai,
+            SessionSortColumn::Recent,
+            SessionSortColumn::Session,
+            SessionSortColumn::Summary,
+            SessionSortColumn::Status,
+        ];
+
+        app.session_sort = Some(SessionSort {
+            column: SessionSortColumn::Session,
+            ascending: true,
+        });
+        app.select_next_session_sort_column_from(&rendered);
+        assert_eq!(app.session_sort.unwrap().column, SessionSortColumn::Summary);
+
+        app.select_next_session_sort_column_from(&rendered);
+        assert_eq!(app.session_sort.unwrap().column, SessionSortColumn::Status);
+
+        app.session_sort = Some(SessionSort {
+            column: SessionSortColumn::Config,
+            ascending: true,
+        });
+        app.ensure_session_sort_column_in(&rendered);
+        assert_eq!(app.session_sort.unwrap().column, SessionSortColumn::Ai);
+    }
+
+    #[test]
+    fn configured_session_columns_parse_known_ids_and_ignore_unknown() {
+        let raw = vec![
+            "summary".to_string(),
+            "bogus".to_string(),
+            "cache_r".to_string(),
+            "summary".to_string(),
+        ];
+        let app = App::new_with_config_and_claude_dirs_and_columns(
+            Theme::default(),
+            &[],
+            crate::config::PanelVisibility::default(),
+            &[],
+            false,
+            &raw,
+        );
+
+        assert_eq!(
+            app.session_columns,
+            vec![SessionSortColumn::Summary, SessionSortColumn::CacheRead]
+        );
     }
 
     #[test]

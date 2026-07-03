@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::{App, SessionSortColumn};
 use crate::locale::t;
 use crate::model::{AgentSession, ChatRole, FileOp};
 use crate::theme::Theme;
@@ -45,7 +45,7 @@ pub(crate) fn draw_sessions_panel_active(
     } else if inner.height <= 12 {
         6.min(inner.height.saturating_sub(3))
     } else {
-        10.min(inner.height / 2)
+        10.min(inner.height.saturating_sub(3))
     };
     let max_table = inner.height.saturating_sub(detail_reserve);
     let table_h = (1 + session_rows).min(max_table);
@@ -77,83 +77,14 @@ pub(crate) fn draw_sessions_panel_active(
     );
     let mut rows = Vec::new();
 
-    // Responsive columns: keep the identity, current task, status, and context
-    // visible first; add lower-value columns back as width allows.
     let w = inner.width;
-    let show_pid = w >= 120;
-    let show_session_id = w >= 76;
-    let show_config = w >= 100;
-    let show_model = w >= 90;
-    let show_tokens = w >= 86;
-    let show_memory = w >= 110;
-    let show_turn = w >= 110;
-
-    let project_w: u16 = if w >= 120 {
-        14
-    } else if w >= 80 {
-        10
-    } else {
-        8
-    };
-    let session_w: u16 = if w >= 110 { 9 } else { 5 };
-    let session_label = if w >= 110 {
-        t("col.session")
-    } else {
-        t("col.sess")
-    };
-    let config_w: u16 = if w >= 110 { 14 } else { 10 };
-    let config_label = if w >= 110 {
-        t("col.config")
-    } else {
-        t("col.cfg")
-    };
-    let status_w: u16 = if w >= 100 {
-        8
-    } else if w >= 72 {
-        6
-    } else {
-        3
-    };
-    let model_w: u16 = if w >= 110 { 13 } else { 10 };
-    let context_w: u16 = if w >= 100 { 7 } else { 4 };
-    let context_label = if w >= 100 {
-        t("col.context")
-    } else {
-        t("col.ctx")
-    };
-    let tokens_w: u16 = if w >= 100 { 7 } else { 5 };
+    let columns = visible_session_columns(app, w);
 
     let visible = app.visible_indices();
     for &i in &visible {
         let session = &app.sessions[i];
         let selected = i == app.selected;
         let marker = if selected { "►" } else { " " };
-
-        let (agent_label, agent_color) = match session.agent_cli {
-            "claude"   => ("*CC", Color::Rgb(217, 119, 87)),  // #D97757 terracotta
-            "codex"    => (">CD", Color::Rgb(122, 157, 255)), // #7A9DFF periwinkle
-            "opencode" => ("#OC", Color::Rgb(74, 222, 128)),  // #4ADE80 emerald
-            other => {
-                let fallback: String = other.chars().take(3).collect::<String>().to_uppercase();
-                (
-                    Box::leak(fallback.into_boxed_str()) as &str,
-                    theme.inactive_fg,
-                )
-            }
-        };
-
-        let (status_icon_str, status_color) = match &session.status {
-            crate::model::SessionStatus::Thinking => (t("sess.think"), theme.proc_misc),
-            crate::model::SessionStatus::Executing => (t("sess.exec"), theme.hi_fg),
-            crate::model::SessionStatus::Waiting => (t("sess.wait"), grad_at(&proc_grad, 50.0)),
-            crate::model::SessionStatus::Unknown => (t("sess.unknown"), theme.inactive_fg),
-            crate::model::SessionStatus::RateLimited => (t("sess.rate"), theme.status_fg),
-            crate::model::SessionStatus::Done => (t("sess.done"), theme.inactive_fg),
-        };
-
-        let is_1m = session.context_window >= 1_000_000 || session.model.contains("[1m]");
-        let model_short = shorten_model(&session.model, is_1m);
-        let ctx_color = grad_at(&proc_grad, session.context_percent);
 
         let is_done = matches!(session.status, crate::model::SessionStatus::Done);
         let row_style = if selected {
@@ -167,100 +98,25 @@ pub(crate) fn draw_sessions_panel_active(
             Style::default()
         };
 
-        let sid_short = if session.session_id.len() >= 8 {
-            &session.session_id[..8]
-        } else {
-            &session.session_id
-        };
-
-        let summary_col = app.session_summary(session);
-
-        let mut cells = vec![
-            Cell::from(Span::styled(marker, Style::default().fg(theme.hi_fg))),
-            Cell::from(Span::styled(agent_label, Style::default().fg(agent_color))),
-        ];
-        if show_pid {
-            cells.push(Cell::from(Span::styled(
-                format!("{}", session.pid),
-                Style::default().fg(theme.inactive_fg),
-            )));
-        }
-        cells.push(Cell::from(Span::styled(
-            truncate_str(&session.project_name, project_w as usize),
-            Style::default().fg(theme.title),
-        )));
-        if show_session_id {
-            cells.push(Cell::from(Span::styled(
-                truncate_str(sid_short, session_w as usize),
-                Style::default().fg(theme.session_id),
-            )));
-        }
-        if show_config {
-            cells.push(Cell::from(Span::styled(
-                truncate_str(&session.config_root, config_w as usize),
-                Style::default().fg(theme.inactive_fg),
-            )));
-        }
-        cells.extend([
-            Cell::from(Span::styled(
-                truncate_str(&summary_col, w.saturating_sub(24) as usize),
-                Style::default().fg(theme.main_fg),
-            )),
-            Cell::from(Span::styled(
-                truncate_str(&status_icon_str, status_w as usize),
-                Style::default().fg(status_color),
-            )),
-        ]);
-        if show_model {
-            cells.push(Cell::from(Span::styled(
-                truncate_str(&model_short, model_w as usize),
-                Style::default().fg(if model_short == "-" {
-                    theme.inactive_fg
-                } else {
-                    theme.graph_text
-                }),
-            )));
-        }
-        cells.push(Cell::from(Span::styled(
-            format!("{:.0}%", session.context_percent),
-            Style::default().fg(ctx_color),
-        )));
-        if show_tokens {
-            cells.push(Cell::from(Span::styled(
-                fmt_tokens(session.total_tokens()),
-                Style::default().fg(theme.main_fg),
-            )));
-        }
-        if show_memory {
-            cells.push(Cell::from(Span::styled(
-                if session.mem_mb > 0 {
-                    format!("{}M", session.mem_mb)
-                } else {
-                    "—".into()
-                },
-                Style::default().fg(theme.graph_text),
-            )));
-        }
-        if show_turn {
-            cells.push(Cell::from(Span::styled(
-                format!("{}", session.turn_count),
-                Style::default().fg(theme.graph_text),
-            )));
+        let mut cells = vec![Cell::from(Span::styled(
+            marker,
+            Style::default().fg(theme.hi_fg),
+        ))];
+        for &column in &columns {
+            cells.push(session_column_cell(
+                app, session, column, w, theme, &proc_grad,
+            ));
         }
 
         rows.push(Row::new(cells).style(row_style).height(1));
 
         // 2nd line: task text in Summary column
-        let summary_idx =
-            3 + show_pid as usize + show_session_id as usize + show_config as usize;
-        let total_cols = 6
-            + show_pid as usize
-            + show_session_id as usize
-            + show_config as usize
-            + show_model as usize
-            + show_tokens as usize
-            + show_memory as usize
-            + show_turn as usize;
+        let summary_idx = columns
+            .iter()
+            .position(|&column| column == SessionSortColumn::Summary)
+            .unwrap_or(0)
+            + 1;
+        let total_cols = 1 + columns.len();
         let task_cells: Vec<Cell> = (0..total_cols)
             .map(|j| {
                 if j == summary_idx {
@@ -295,42 +151,17 @@ pub(crate) fn draw_sessions_panel_active(
                     theme.inactive_fg
                 };
 
-                let mut sa_cells: Vec<Cell> = vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(prefix, Style::default().fg(theme.div_line))),
-                ];
-                if show_pid {
-                    sa_cells.push(Cell::from(""));
-                }
-                sa_cells.push(Cell::from(Span::styled(
-                    truncate_str(&sa.name, project_w as usize),
-                    Style::default().fg(theme.graph_text),
-                )));
-                if show_session_id {
-                    sa_cells.push(Cell::from(""));
-                }
-                if show_config {
-                    sa_cells.push(Cell::from(""));
-                }
-                sa_cells.extend([
-                    Cell::from(""),
-                    Cell::from(Span::styled(icon, Style::default().fg(sa_fg))),
-                ]);
-                if show_model {
-                    sa_cells.push(Cell::from(""));
-                }
-                sa_cells.push(Cell::from(""));
-                if show_tokens {
-                    sa_cells.push(Cell::from(Span::styled(
-                        fmt_tokens(sa.tokens),
-                        Style::default().fg(theme.graph_text),
-                    )));
-                }
-                if show_memory {
-                    sa_cells.push(Cell::from(""));
-                }
-                if show_turn {
-                    sa_cells.push(Cell::from(""));
+                let mut sa_cells: Vec<Cell> = vec![Cell::from("")];
+                for &column in &columns {
+                    sa_cells.push(subagent_column_cell(
+                        column,
+                        prefix,
+                        &sa.name,
+                        icon,
+                        sa_fg,
+                        sa.tokens,
+                        theme,
+                    ));
                 }
                 rows.push(Row::new(sa_cells).height(1));
             }
@@ -340,67 +171,20 @@ pub(crate) fn draw_sessions_panel_active(
     let header_style = Style::default()
         .fg(theme.main_fg)
         .add_modifier(Modifier::BOLD);
-    let mut header_cells = vec![
-        Cell::from(""),
-        Cell::from(Span::styled(t("col.ai"), header_style)),
-    ];
-    if show_pid {
-        header_cells.push(Cell::from(Span::styled(t("col.pid"), header_style)));
-    }
-    header_cells.push(Cell::from(Span::styled(t("col.project"), header_style)));
-    if show_session_id {
-        header_cells.push(Cell::from(Span::styled(session_label, header_style)));
-    }
-    if show_config {
-        header_cells.push(Cell::from(Span::styled(config_label, header_style)));
-    }
-    header_cells.extend([
-        Cell::from(Span::styled(t("col.summary"), header_style)),
-        Cell::from(Span::styled(t("col.status"), header_style)),
-    ]);
-    if show_model {
-        header_cells.push(Cell::from(Span::styled(t("col.model"), header_style)));
-    }
-    header_cells.push(Cell::from(Span::styled(context_label, header_style)));
-    if show_tokens {
-        header_cells.push(Cell::from(Span::styled(t("col.tokens"), header_style)));
-    }
-    if show_memory {
-        header_cells.push(Cell::from(Span::styled(t("col.memory"), header_style)));
-    }
-    if show_turn {
-        header_cells.push(Cell::from(Span::styled(t("col.turn"), header_style)));
+    let mut header_cells = vec![Cell::from("")];
+    for &column in &columns {
+        header_cells.push(sortable_header(
+            app,
+            column,
+            &column_label(column, w),
+            header_style,
+        ));
     }
     let header = Row::new(header_cells).height(1);
 
-    let mut widths_vec: Vec<Constraint> = vec![
-        Constraint::Length(1), // marker
-        Constraint::Length(3), // agent label
-    ];
-    if show_pid {
-        widths_vec.push(Constraint::Length(6)); // pid
-    }
-    widths_vec.push(Constraint::Length(project_w)); // project
-    if show_session_id {
-        widths_vec.push(Constraint::Length(session_w)); // session id
-    }
-    if show_config {
-        widths_vec.push(Constraint::Length(config_w)); // config root
-    }
-    widths_vec.push(Constraint::Fill(1)); // summary (fills remaining)
-    widths_vec.push(Constraint::Length(status_w)); // status
-    if show_model {
-        widths_vec.push(Constraint::Length(model_w)); // model
-    }
-    widths_vec.push(Constraint::Length(context_w)); // context
-    if show_tokens {
-        widths_vec.push(Constraint::Length(tokens_w)); // tokens
-    }
-    if show_memory {
-        widths_vec.push(Constraint::Length(8)); // memory
-    }
-    if show_turn {
-        widths_vec.push(Constraint::Length(4)); // turn
+    let mut widths_vec: Vec<Constraint> = vec![Constraint::Length(1)]; // marker
+    for &column in &columns {
+        widths_vec.push(column_width(column, w));
     }
 
     // Scroll: rows vary per session in tree view; use the built row list as the source of truth.
@@ -980,6 +764,369 @@ fn draw_file_audit(f: &mut Frame, session: &AgentSession, area: Rect, theme: &Th
     f.render_widget(Paragraph::new(lines), area);
 }
 
+fn visible_session_columns(app: &App, width: u16) -> Vec<SessionSortColumn> {
+    let mut columns: Vec<SessionSortColumn> = app
+        .session_columns
+        .iter()
+        .copied()
+        .filter(|&column| column_fits(column, width))
+        .collect();
+    if columns.is_empty() {
+        columns.push(SessionSortColumn::Ai);
+    }
+    columns
+}
+
+pub(crate) fn visible_sort_columns(app: &App, area: Rect) -> Vec<SessionSortColumn> {
+    if area.height < 4 {
+        return Vec::new();
+    }
+    visible_session_columns(app, area.width.saturating_sub(2))
+}
+
+fn column_fits(column: SessionSortColumn, width: u16) -> bool {
+    match column {
+        SessionSortColumn::Ai
+        | SessionSortColumn::Recent
+        | SessionSortColumn::Project
+        | SessionSortColumn::Summary
+        | SessionSortColumn::Status
+        | SessionSortColumn::Context => true,
+        SessionSortColumn::Session => width >= 76,
+        SessionSortColumn::Tokens => width >= 86,
+        SessionSortColumn::Model => width >= 90,
+        SessionSortColumn::Config => width >= 100,
+        SessionSortColumn::Memory | SessionSortColumn::Turn => width >= 110,
+        SessionSortColumn::Pid | SessionSortColumn::Branch => width >= 120,
+        SessionSortColumn::Everything => width >= 130,
+        SessionSortColumn::Input | SessionSortColumn::Output => width >= 140,
+        SessionSortColumn::CacheRead | SessionSortColumn::CacheWrite => width >= 150,
+        SessionSortColumn::Version | SessionSortColumn::Effort => width >= 160,
+        SessionSortColumn::Cwd => width >= 180,
+    }
+}
+
+fn column_width(column: SessionSortColumn, table_width: u16) -> Constraint {
+    match column {
+        SessionSortColumn::Ai => Constraint::Length(3),
+        SessionSortColumn::Recent => Constraint::Length(if table_width >= 100 { 7 } else { 5 }),
+        SessionSortColumn::Pid => Constraint::Length(6),
+        SessionSortColumn::Project => Constraint::Length(if table_width >= 120 {
+            14
+        } else if table_width >= 80 {
+            10
+        } else {
+            8
+        }),
+        SessionSortColumn::Session => Constraint::Length(if table_width >= 110 { 9 } else { 5 }),
+        SessionSortColumn::Config => Constraint::Length(if table_width >= 110 { 14 } else { 10 }),
+        SessionSortColumn::Summary => Constraint::Fill(1),
+        SessionSortColumn::Status => Constraint::Length(if table_width >= 100 {
+            8
+        } else if table_width >= 72 {
+            6
+        } else {
+            3
+        }),
+        SessionSortColumn::Model => Constraint::Length(if table_width >= 110 { 13 } else { 10 }),
+        SessionSortColumn::Context => Constraint::Length(if table_width >= 100 { 7 } else { 4 }),
+        SessionSortColumn::Tokens
+        | SessionSortColumn::Input
+        | SessionSortColumn::Output
+        | SessionSortColumn::CacheRead
+        | SessionSortColumn::CacheWrite => Constraint::Length(if table_width >= 100 { 7 } else { 5 }),
+        SessionSortColumn::Memory => Constraint::Length(8),
+        SessionSortColumn::Turn => Constraint::Length(4),
+        SessionSortColumn::Everything => Constraint::Length(11),
+        SessionSortColumn::Branch => Constraint::Length(12),
+        SessionSortColumn::Version => Constraint::Length(8),
+        SessionSortColumn::Cwd => Constraint::Length(24),
+        SessionSortColumn::Effort => Constraint::Length(7),
+    }
+}
+
+fn column_label(column: SessionSortColumn, table_width: u16) -> String {
+    match column {
+        SessionSortColumn::Session if table_width < 110 => t("col.sess"),
+        SessionSortColumn::Config if table_width < 110 => t("col.cfg"),
+        SessionSortColumn::Context if table_width < 100 => t("col.ctx"),
+        SessionSortColumn::Ai => t("col.ai"),
+        SessionSortColumn::Recent => t("col.recent"),
+        SessionSortColumn::Pid => t("col.pid"),
+        SessionSortColumn::Project => t("col.project"),
+        SessionSortColumn::Session => t("col.session"),
+        SessionSortColumn::Config => t("col.config"),
+        SessionSortColumn::Summary => t("col.summary"),
+        SessionSortColumn::Status => t("col.status"),
+        SessionSortColumn::Model => t("col.model"),
+        SessionSortColumn::Context => t("col.context"),
+        SessionSortColumn::Tokens => t("col.tokens"),
+        SessionSortColumn::Input => t("col.input"),
+        SessionSortColumn::Output => t("col.output"),
+        SessionSortColumn::CacheRead => t("col.cache_r"),
+        SessionSortColumn::CacheWrite => t("col.cache_w"),
+        SessionSortColumn::Memory => t("col.memory"),
+        SessionSortColumn::Turn => t("col.turn"),
+        SessionSortColumn::Everything => t("col.everything"),
+        SessionSortColumn::Branch => t("col.branch"),
+        SessionSortColumn::Version => t("col.version"),
+        SessionSortColumn::Cwd => t("col.cwd"),
+        SessionSortColumn::Effort => t("col.effort"),
+    }
+}
+
+fn session_column_cell<'a>(
+    app: &App,
+    session: &AgentSession,
+    column: SessionSortColumn,
+    table_width: u16,
+    theme: &Theme,
+    proc_grad: &[Color; 101],
+) -> Cell<'a> {
+    match column {
+        SessionSortColumn::Ai => {
+            let (label, color) = agent_label(session.agent_cli, theme);
+            Cell::from(Span::styled(label, Style::default().fg(color)))
+        }
+        SessionSortColumn::Recent => Cell::from(Span::styled(
+            session.last_turn_display(),
+            Style::default().fg(theme.graph_text),
+        )),
+        SessionSortColumn::Pid => Cell::from(Span::styled(
+            format!("{}", session.pid),
+            Style::default().fg(theme.inactive_fg),
+        )),
+        SessionSortColumn::Project => Cell::from(Span::styled(
+            truncate_str(
+                &session.project_name,
+                column_len(column, table_width).unwrap_or(10) as usize,
+            ),
+            Style::default().fg(theme.title),
+        )),
+        SessionSortColumn::Session => {
+            let sid_short = if session.session_id.len() >= 8 {
+                &session.session_id[..8]
+            } else {
+                &session.session_id
+            };
+            Cell::from(Span::styled(
+                truncate_str(
+                    sid_short,
+                    column_len(column, table_width).unwrap_or(8) as usize,
+                ),
+                Style::default().fg(theme.session_id),
+            ))
+        }
+        SessionSortColumn::Config => Cell::from(Span::styled(
+            truncate_str(
+                &session.config_root,
+                column_len(column, table_width).unwrap_or(10) as usize,
+            ),
+            Style::default().fg(theme.inactive_fg),
+        )),
+        SessionSortColumn::Summary => Cell::from(Span::styled(
+            truncate_str(
+                &app.session_summary(session),
+                table_width.saturating_sub(24) as usize,
+            ),
+            Style::default().fg(theme.main_fg),
+        )),
+        SessionSortColumn::Status => {
+            let (label, color) = status_label(&session.status, theme, proc_grad);
+            Cell::from(Span::styled(
+                truncate_str(
+                    &label,
+                    column_len(column, table_width).unwrap_or(6) as usize,
+                ),
+                Style::default().fg(color),
+            ))
+        }
+        SessionSortColumn::Model => {
+            let is_1m = session.context_window >= 1_000_000 || session.model.contains("[1m]");
+            let model_short = shorten_model(&session.model, is_1m);
+            Cell::from(Span::styled(
+                truncate_str(
+                    &model_short,
+                    column_len(column, table_width).unwrap_or(10) as usize,
+                ),
+                Style::default().fg(if model_short == "-" {
+                    theme.inactive_fg
+                } else {
+                    theme.graph_text
+                }),
+            ))
+        }
+        SessionSortColumn::Context => Cell::from(Span::styled(
+            format!("{:.0}%", session.context_percent),
+            Style::default().fg(grad_at(proc_grad, session.context_percent)),
+        )),
+        SessionSortColumn::Tokens => token_cell(session.active_tokens(), theme),
+        SessionSortColumn::Input => token_cell(session.total_input_tokens, theme),
+        SessionSortColumn::Output => token_cell(session.total_output_tokens, theme),
+        SessionSortColumn::CacheRead => token_cell(session.total_cache_read, theme),
+        SessionSortColumn::CacheWrite => token_cell(session.total_cache_create, theme),
+        SessionSortColumn::Memory => Cell::from(Span::styled(
+            if session.mem_mb > 0 {
+                format!("{}M", session.mem_mb)
+            } else {
+                "—".into()
+            },
+            Style::default().fg(theme.graph_text),
+        )),
+        SessionSortColumn::Turn => Cell::from(Span::styled(
+            format!("{}", session.turn_count),
+            Style::default().fg(theme.graph_text),
+        )),
+        SessionSortColumn::Everything => token_cell(session.total_tokens(), theme),
+        SessionSortColumn::Branch => Cell::from(Span::styled(
+            truncate_str(&session.git_branch, 12),
+            Style::default().fg(theme.title),
+        )),
+        SessionSortColumn::Version => Cell::from(Span::styled(
+            truncate_str(&session.version, 8),
+            Style::default().fg(theme.inactive_fg),
+        )),
+        SessionSortColumn::Cwd => Cell::from(Span::styled(
+            truncate_str(&session.cwd, 24),
+            Style::default().fg(theme.inactive_fg),
+        )),
+        SessionSortColumn::Effort => Cell::from(Span::styled(
+            truncate_str(&session.effort, 7),
+            Style::default().fg(theme.graph_text),
+        )),
+    }
+}
+
+fn subagent_column_cell<'a>(
+    column: SessionSortColumn,
+    prefix: &str,
+    name: &str,
+    icon: &str,
+    status_color: Color,
+    tokens: u64,
+    theme: &Theme,
+) -> Cell<'a> {
+    match column {
+        SessionSortColumn::Ai => Cell::from(Span::styled(
+            prefix.to_string(),
+            Style::default().fg(theme.div_line),
+        )),
+        SessionSortColumn::Recent => Cell::from(""),
+        SessionSortColumn::Project => Cell::from(Span::styled(
+            truncate_str(name, 12),
+            Style::default().fg(theme.graph_text),
+        )),
+        SessionSortColumn::Status => {
+            Cell::from(Span::styled(icon.to_string(), Style::default().fg(status_color)))
+        }
+        SessionSortColumn::Tokens | SessionSortColumn::Everything => token_cell(tokens, theme),
+        _ => Cell::from(""),
+    }
+}
+
+fn token_cell<'a>(tokens: u64, theme: &Theme) -> Cell<'a> {
+    Cell::from(Span::styled(
+        fmt_tokens(tokens),
+        Style::default().fg(theme.main_fg),
+    ))
+}
+
+fn agent_label(agent_cli: &str, theme: &Theme) -> (String, Color) {
+    match agent_cli {
+        "claude" => ("*CC".to_string(), Color::Rgb(217, 119, 87)),
+        "codex" => (">CD".to_string(), Color::Rgb(122, 157, 255)),
+        "opencode" => ("#OC".to_string(), Color::Rgb(74, 222, 128)),
+        other => (
+            other.chars().take(3).collect::<String>().to_uppercase(),
+            theme.inactive_fg,
+        ),
+    }
+}
+
+fn status_label(
+    status: &crate::model::SessionStatus,
+    theme: &Theme,
+    proc_grad: &[Color; 101],
+) -> (String, Color) {
+    match status {
+        crate::model::SessionStatus::Thinking => (t("sess.think"), theme.proc_misc),
+        crate::model::SessionStatus::Executing => (t("sess.exec"), theme.hi_fg),
+        crate::model::SessionStatus::Waiting => (t("sess.wait"), grad_at(proc_grad, 50.0)),
+        crate::model::SessionStatus::Unknown => (t("sess.unknown"), theme.inactive_fg),
+        crate::model::SessionStatus::RateLimited => (t("sess.rate"), theme.status_fg),
+        crate::model::SessionStatus::Done => (t("sess.done"), theme.inactive_fg),
+    }
+}
+
+fn column_len(column: SessionSortColumn, table_width: u16) -> Option<u16> {
+    match column_width(column, table_width) {
+        Constraint::Length(width) => Some(width),
+        _ => None,
+    }
+}
+
+fn sortable_header<'a>(
+    app: &App,
+    column: SessionSortColumn,
+    label: &str,
+    style: Style,
+) -> Cell<'a> {
+    let text = if let Some(indicator) = app.session_sort_indicator(column) {
+        format!("{indicator}{label}")
+    } else {
+        label.to_string()
+    };
+    Cell::from(Span::styled(text, style))
+}
+
+pub(crate) fn sort_column_at(
+    app: &App,
+    area: Rect,
+    column: u16,
+    row: u16,
+) -> Option<SessionSortColumn> {
+    if area.height < 4 || row != area.y + 1 {
+        return None;
+    }
+    let inner_width = area.width.saturating_sub(2);
+    let x = area.x + 1;
+    let rel_x = column.checked_sub(x)?;
+    if rel_x >= inner_width {
+        return None;
+    }
+
+    let w = inner_width;
+    let columns = visible_session_columns(app, w);
+    let fixed_width: u16 = 1
+        + columns
+            .iter()
+            .filter(|&&column| column != SessionSortColumn::Summary)
+            .filter_map(|&column| column_len(column, w))
+            .sum::<u16>();
+    let summary_w = w.saturating_sub(fixed_width).max(1);
+
+    let mut ranges = vec![(1, None)];
+    for column in columns {
+        let width = if column == SessionSortColumn::Summary {
+            summary_w
+        } else {
+            column_len(column, w).unwrap_or(1)
+        };
+        ranges.push((width, Some(column)));
+    }
+
+    let mut cursor = 0u16;
+    for (width, sort_column) in ranges {
+        let end = cursor.saturating_add(width);
+        if rel_x >= cursor && rel_x < end {
+            return sort_column;
+        }
+        cursor = end;
+    }
+
+    None
+}
+
 pub(crate) fn shorten_model(model: &str, is_1m: bool) -> String {
     // "claude-opus-4-6" → "opus4.6", "claude-sonnet-4-6" → "sonnet4.6", "claude-haiku-4-5" → "haiku4.5"
     let s = model.strip_prefix("claude-").unwrap_or(model);
@@ -1273,6 +1420,7 @@ mod tests {
             cwd: "/tmp/project".into(),
             project_name: "project".into(),
             started_at: 0,
+            last_turn_at: 0,
             status: SessionStatus::Waiting,
             model: "gpt-5".into(),
             effort: String::new(),

@@ -50,6 +50,23 @@ pub(crate) fn draw_footer(f: &mut Frame, app: &App, area: Rect, theme: &Theme) {
         return;
     }
 
+    if app.session_sort_mode {
+        let sort = app.session_sort;
+        let sort_text = sort
+            .map(|sort| {
+                let direction = if sort.ascending { "asc" } else { "desc" };
+                format!(" {} {} ", sort.column.label(), direction)
+            })
+            .unwrap_or_default();
+        let spans = vec![
+            Span::styled(" o ", Style::default().fg(theme.hi_fg)),
+            Span::styled(t("footer.sort_mode"), Style::default().fg(theme.main_fg)),
+            Span::styled(sort_text, Style::default().fg(theme.status_fg)),
+        ];
+        f.render_widget(Paragraph::new(Line::from(spans)), area);
+        return;
+    }
+
     let compact = area.width <= 80;
     let ultra_compact = area.width <= 70;
 

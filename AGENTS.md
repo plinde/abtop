@@ -81,6 +81,7 @@ Panel descriptions:
 - **projects** (always visible): Per-project git branch + added/modified file counts.
 - **⁴ports**: Agent-spawned open ports + orphan ports (from dead sessions). Conflict detection.
 - **⁵sessions**: Full-width panel below mid row. Session list table (top) + selected session detail (bottom), separated by divider.
+  The default session columns start with `AI`, `Recent`, then PID/project/session metadata. `Recent` is the age of the most recent turn/activity and sorts newest-first by default.
 
 ## Data Sources
 
@@ -275,6 +276,10 @@ Tracks child processes that have open ports. When a parent session dies but the 
 |-----|--------|
 | `↑`/`↓` or `k`/`j` | Select session in list |
 | `Enter` | Jump to session terminal (cmux / tmux / iTerm2) |
+| `o` | Enter/exit session sort mode |
+| `O` | Reverse current session sort |
+| `←`/`→` in sort mode | Select sort column |
+| `↑`/`↓` in sort mode | Set ascending/descending sort direction |
 | `x` | Kill selected session (SIGKILL) |
 | `X` | Kill all orphan ports |
 | `q` | Quit |

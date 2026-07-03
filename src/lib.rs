@@ -41,6 +41,7 @@
 //!     &cfg.hidden_agents,
 //!     cfg.panels,
 //!     &cfg.claude_config_dirs,
+//!     cfg.lock_theme,
 //! );
 //! loop {
 //!     app.tick_no_summaries();                // refresh without spawning `claude --print`
@@ -80,12 +81,13 @@ use std::time::Duration;
 /// Construct a headless `App` from loaded config + theme. Shared by the
 /// `--json` and `--once` entry points.
 fn build_app(theme: theme::Theme, cfg: &config::AppConfig) -> App {
-    App::new_with_config_and_claude_dirs(
+    App::new_with_config_and_claude_dirs_and_columns(
         theme,
         &cfg.hidden_agents,
         cfg.panels,
         &cfg.claude_config_dirs,
         cfg.lock_theme,
+        &cfg.session_columns,
     )
 }
 
@@ -203,6 +205,7 @@ pub fn run() -> io::Result<()> {
         cfg.panels,
         &cfg.claude_config_dirs,
         cfg.lock_theme,
+        &cfg.session_columns,
     );
 
     // Always attempt both cleanup steps regardless of app result
@@ -223,13 +226,15 @@ fn run_app(
     panels: config::PanelVisibility,
     claude_config_dirs: &[std::path::PathBuf],
     lock_theme: bool,
+    session_columns: &[String],
 ) -> io::Result<()> {
-    let mut app = App::new_with_config_and_claude_dirs(
+    let mut app = App::new_with_config_and_claude_dirs_and_columns(
         initial_theme.unwrap_or_default(),
         hidden_agents,
         panels,
         claude_config_dirs,
         lock_theme,
+        session_columns,
     );
     if demo_mode {
         demo::populate_demo(&mut app);
@@ -273,6 +278,25 @@ fn run_app(
                             KeyCode::Enter | KeyCode::Char(' ') => app.config_toggle_selected(),
                             _ => {}
                         }
+                    } else if app.session_sort_mode {
+                        let size = terminal.size()?;
+                        let area = Rect::new(0, 0, size.width, size.height);
+                        let sort_columns = ui::visible_session_sort_columns(&app, area);
+                        match key.code {
+                            KeyCode::Esc
+                            | KeyCode::Enter
+                            | KeyCode::Char('o')
+                            | KeyCode::Char('q') => app.close_session_sort_mode(),
+                            KeyCode::Right => {
+                                app.select_next_session_sort_column_from(&sort_columns)
+                            }
+                            KeyCode::Left => {
+                                app.select_prev_session_sort_column_from(&sort_columns)
+                            }
+                            KeyCode::Up => app.set_session_sort_ascending(),
+                            KeyCode::Down => app.set_session_sort_descending(),
+                            _ => {}
+                        }
                     } else if app.filter_active {
                         match key.code {
                             KeyCode::Esc => app.clear_filter(),
@@ -293,6 +317,16 @@ fn run_app(
                             KeyCode::Left => app.select_prev_narrow_tab(),
                             KeyCode::Tab | KeyCode::Char('\t') => app.select_next_section(),
                             KeyCode::BackTab => app.select_prev_section(),
+                            KeyCode::Char('o') => {
+                                app.toggle_session_sort_mode();
+                                if app.session_sort_mode {
+                                    let size = terminal.size()?;
+                                    let area = Rect::new(0, 0, size.width, size.height);
+                                    let sort_columns = ui::visible_session_sort_columns(&app, area);
+                                    app.ensure_session_sort_column_in(&sort_columns);
+                                }
+                            }
+                            KeyCode::Char('O') => app.reverse_session_sort(),
                             KeyCode::Char('w') => app.set_narrow_tab(app::NarrowTab::Work),
                             KeyCode::Char('u') => app.set_narrow_tab(app::NarrowTab::Usage),
                             KeyCode::Char('s') => app.set_narrow_tab(app::NarrowTab::System),
@@ -381,6 +415,10 @@ fn handle_mouse_event(app: &mut App, mouse: MouseEvent, area: Rect) {
                     }
                     ui::ClickTarget::Session(index) => {
                         app.select_session(index);
+                        app.set_active_narrow_section(app::NarrowSection::Sessions);
+                    }
+                    ui::ClickTarget::SessionSort(column) => {
+                        app.toggle_session_sort(column);
                         app.set_active_narrow_section(app::NarrowSection::Sessions);
                     }
                     ui::ClickTarget::KillOrphanPorts => {

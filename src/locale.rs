@@ -126,7 +126,10 @@ static LOCALE_EN: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("help.jump_tmux", "jump to session terminal");
     m.insert("help.filter", "filter sessions");
     m.insert("help.sort", "sort sessions");
-    m.insert("help.sort_mode", "sort mode: left/right column, up/down direction");
+    m.insert(
+        "help.sort_mode",
+        "sort mode: arrows set primary, Backspace clears layers",
+    );
     m.insert("help.clear_filter", "clear filter / close overlay");
     m.insert("help.kill_session", "kill selected session");
     m.insert("help.kill_orphans", "kill orphan ports");
@@ -159,7 +162,10 @@ static LOCALE_EN: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("footer.quit", "quit");
     m.insert("footer.sessions", "sessions");
     m.insert("footer.auto", "auto");
-    m.insert("footer.sort_mode", "sort: left/right column, up/down direction, Esc/o done");
+    m.insert(
+        "footer.sort_mode",
+        "sort: arrows primary, Backspace clear layers, Esc/o done",
+    );
     m.insert("footer.zoom_out", "Esc zoom out");
     m.insert("footer.peak_hours", "Claude Peak Hours");
     m.insert("footer.resets_in", "resets in");
@@ -391,7 +397,10 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("help.jump_tmux", "jump to session terminal");
     m.insert("help.filter", "过滤会话");
     m.insert("help.sort", "sort sessions");
-    m.insert("help.sort_mode", "sort mode: left/right column, up/down direction");
+    m.insert(
+        "help.sort_mode",
+        "sort mode: arrows set primary, Backspace clears layers",
+    );
     m.insert("help.clear_filter", "清除过滤 / 关闭覆盖");
     m.insert("help.kill_session", "终止选中的会话");
     m.insert("help.kill_orphans", "终止孤立端口");
@@ -421,7 +430,10 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("footer.quit", "退出");
     m.insert("footer.sessions", "会话");
     m.insert("footer.auto", "自动");
-    m.insert("footer.sort_mode", "sort: left/right column, up/down direction, Esc/o done");
+    m.insert(
+        "footer.sort_mode",
+        "sort: arrows primary, Backspace clear layers, Esc/o done",
+    );
     m.insert("footer.zoom_out", "Esc 缩小");
     m.insert("footer.peak_hours", "Claude 高峰时段");
     m.insert("footer.resets_in", "重置于");

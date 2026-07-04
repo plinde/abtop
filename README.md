@@ -148,10 +148,14 @@ columns without editing the file directly.
 
 Session columns are sortable from the table header with the mouse, or from the
 keyboard by pressing `o` to enter sort mode. In sort mode, `←`/`→` selects the
-sort column, `↑` sorts ascending, `↓` sorts descending, and `Esc`, `Enter`, or
-`o` exits sort mode. The `recent`, token, memory, turn-count, and total-token
-columns default to descending order; text and status columns default to
-ascending order. `O` reverses the current sort without entering sort mode.
+primary sort column, `↑` sorts ascending, `↓` sorts descending, `Backspace`
+clears secondary sort layers, and `Esc`, `Enter`, or `o` exits sort mode.
+Selecting a different primary keeps the previous primary as a tiebreaker, up
+to three layers; for example, select `recent` and then `status` to sort by
+status, with newest sessions first inside each status group. The `recent`,
+token, memory, turn-count, and total-token columns default to descending order;
+text and status columns default to ascending order. `O` reverses the current
+primary sort without entering sort mode.
 
 ### Supported Languages
 
@@ -172,6 +176,7 @@ When `language` is unset, abtop auto-detects from `LANG` — any value starting 
 | `O`                | Reverse current session sort          |
 | `←`/`→` in sort mode | Select sort column                  |
 | `↑`/`↓` in sort mode | Set sort direction                  |
+| `Backspace` in sort mode | Clear secondary sort layers      |
 | `x`                | Kill selected session                |
 | `X`                | Kill all orphan ports                |
 | `t`                | Cycle theme                          |

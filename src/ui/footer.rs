@@ -51,13 +51,20 @@ pub(crate) fn draw_footer(f: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     }
 
     if app.session_sort_mode {
-        let sort = app.session_sort;
-        let sort_text = sort
+        let sort_text = app
+            .session_sort_layers()
+            .iter()
             .map(|sort| {
                 let direction = if sort.ascending { "asc" } else { "desc" };
-                format!(" {} {} ", sort.column.label(), direction)
+                format!("{} {}", sort.column.label(), direction)
             })
-            .unwrap_or_default();
+            .collect::<Vec<_>>()
+            .join(" > ");
+        let sort_text = if sort_text.is_empty() {
+            String::new()
+        } else {
+            format!(" {sort_text} ")
+        };
         let spans = vec![
             Span::styled(" o ", Style::default().fg(theme.hi_fg)),
             Span::styled(t("footer.sort_mode"), Style::default().fg(theme.main_fg)),

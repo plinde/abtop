@@ -276,10 +276,13 @@ pub struct SessionSort {
     pub ascending: bool,
 }
 
+const MAX_SESSION_SORT_LAYERS: usize = 3;
+
 pub struct App {
     pub sessions: Vec<AgentSession>,
     pub selected: usize,
     pub session_sort: Option<SessionSort>,
+    pub session_sort_secondary: Vec<SessionSort>,
     pub session_sort_mode: bool,
     pub session_columns: Vec<SessionSortColumn>,
     pub should_quit: bool,
@@ -396,6 +399,7 @@ impl App {
             sessions: Vec::new(),
             selected: 0,
             session_sort: None,
+            session_sort_secondary: Vec::new(),
             session_sort_mode: false,
             session_columns: normalize_session_columns(session_columns),
             should_quit: false,
@@ -948,16 +952,36 @@ impl App {
                 .collect()
         };
 
-        if let Some(sort) = self.session_sort {
-            indices.sort_by(|&a, &b| self.compare_sessions(a, b, sort));
+        if self.session_sort.is_some() {
+            indices.sort_by(|&a, &b| self.compare_sessions(a, b));
         }
 
         indices
     }
 
-    fn compare_sessions(&self, a: usize, b: usize, sort: SessionSort) -> Ordering {
+    fn compare_sessions(&self, a: usize, b: usize) -> Ordering {
         let lhs = &self.sessions[a];
         let rhs = &self.sessions[b];
+        for sort in self.session_sort_layers() {
+            let ord = self.compare_sessions_by(lhs, rhs, sort);
+            if ord != Ordering::Equal {
+                return ord;
+            }
+        }
+
+        rhs.started_at
+            .cmp(&lhs.started_at)
+            .then_with(|| lhs.agent_cli.cmp(rhs.agent_cli))
+            .then_with(|| lhs.session_id.cmp(&rhs.session_id))
+            .then_with(|| lhs.pid.cmp(&rhs.pid))
+    }
+
+    fn compare_sessions_by(
+        &self,
+        lhs: &AgentSession,
+        rhs: &AgentSession,
+        sort: SessionSort,
+    ) -> Ordering {
         let mut ord = match sort.column {
             SessionSortColumn::Ai => cmp_str(lhs.agent_cli, rhs.agent_cli),
             SessionSortColumn::Recent => lhs.last_turn_at.cmp(&rhs.last_turn_at),
@@ -989,10 +1013,20 @@ impl App {
             ord = ord.reverse();
         }
 
-        ord.then_with(|| rhs.started_at.cmp(&lhs.started_at))
-            .then_with(|| lhs.agent_cli.cmp(rhs.agent_cli))
-            .then_with(|| lhs.session_id.cmp(&rhs.session_id))
-            .then_with(|| lhs.pid.cmp(&rhs.pid))
+        ord
+    }
+
+    pub fn session_sort_layers(&self) -> Vec<SessionSort> {
+        let mut layers = Vec::new();
+        if let Some(primary) = self.session_sort {
+            layers.push(primary);
+        }
+        for &sort in &self.session_sort_secondary {
+            if !layers.iter().any(|layer| layer.column == sort.column) {
+                layers.push(sort);
+            }
+        }
+        layers
     }
 
     pub fn toggle_session_sort(&mut self, column: SessionSortColumn) {
@@ -1001,15 +1035,26 @@ impl App {
                 column,
                 ascending: !current.ascending,
             },
+            _ if self
+                .session_sort_secondary
+                .iter()
+                .any(|sort| sort.column == column) =>
+            {
+                self.session_sort_secondary
+                    .iter()
+                    .copied()
+                    .find(|sort| sort.column == column)
+                    .unwrap_or(SessionSort {
+                        column,
+                        ascending: column.default_ascending(),
+                    })
+            }
             _ => SessionSort {
                 column,
                 ascending: column.default_ascending(),
             },
         };
-        self.session_sort = Some(next);
-        self.clamp_selection_to_visible();
-        let direction = if next.ascending { "ascending" } else { "descending" };
-        self.set_status(format!("sort: {} {}", column.label(), direction));
+        self.set_session_sort(next.column, next.ascending);
     }
 
     pub fn toggle_session_sort_mode(&mut self) {
@@ -1051,7 +1096,13 @@ impl App {
         let current = self.session_sort.map(|sort| sort.column);
         if current.is_none_or(|column| !columns.contains(&column)) {
             let column = columns[0];
-            self.set_session_sort(column, column.default_ascending());
+            self.session_sort = Some(SessionSort {
+                column,
+                ascending: column.default_ascending(),
+            });
+            self.session_sort_secondary
+                .retain(|sort| columns.contains(&sort.column));
+            self.set_sort_status();
         }
     }
 
@@ -1096,20 +1147,30 @@ impl App {
     }
 
     fn set_session_sort(&mut self, column: SessionSortColumn, ascending: bool) {
+        if let Some(primary) = self.session_sort {
+            if primary.column != column {
+                self.session_sort_secondary
+                    .retain(|sort| sort.column != column && sort.column != primary.column);
+                self.session_sort_secondary.insert(0, primary);
+                self.session_sort_secondary
+                    .truncate(MAX_SESSION_SORT_LAYERS.saturating_sub(1));
+            }
+        }
         self.session_sort = Some(SessionSort { column, ascending });
         self.clamp_selection_to_visible();
         self.set_sort_status();
     }
 
     fn set_sort_status(&mut self) {
-        if let Some(sort) = self.session_sort {
-            let direction = if sort.ascending {
-                "ascending"
-            } else {
-                "descending"
-            };
-            self.set_status(format!("sort: {} {}", sort.column.label(), direction));
+        let layers = self.session_sort_layers();
+        if !layers.is_empty() {
+            self.set_status(format!("sort: {}", format_sort_layers(&layers)));
         }
+    }
+
+    pub fn clear_secondary_session_sorts(&mut self) {
+        self.session_sort_secondary.clear();
+        self.set_sort_status();
     }
 
     pub fn cycle_session_sort_column(&mut self) {
@@ -1123,18 +1184,7 @@ impl App {
                 SessionSortColumn::ALL[(pos + 1) % SessionSortColumn::ALL.len()]
             }
         };
-        self.session_sort = Some(SessionSort {
-            column: next_column,
-            ascending: next_column.default_ascending(),
-        });
-        self.clamp_selection_to_visible();
-        let sort = self.session_sort.unwrap();
-        let direction = if sort.ascending {
-            "ascending"
-        } else {
-            "descending"
-        };
-        self.set_status(format!("sort: {} {}", sort.column.label(), direction));
+        self.set_session_sort(next_column, next_column.default_ascending());
     }
 
     pub fn reverse_session_sort(&mut self) {
@@ -1145,15 +1195,22 @@ impl App {
         sort.ascending = !sort.ascending;
         self.session_sort = Some(sort);
         self.clamp_selection_to_visible();
-        let direction = if sort.ascending { "ascending" } else { "descending" };
-        self.set_status(format!("sort: {} {}", sort.column.label(), direction));
+        self.set_sort_status();
     }
 
-    pub fn session_sort_indicator(&self, column: SessionSortColumn) -> Option<&'static str> {
+    pub fn session_sort_indicator(&self, column: SessionSortColumn) -> Option<String> {
         match self.session_sort {
-            Some(sort) if sort.column == column && sort.ascending => Some("↑"),
-            Some(sort) if sort.column == column => Some("↓"),
-            _ => None,
+            Some(sort) if sort.column == column && sort.ascending => Some("↑".to_string()),
+            Some(sort) if sort.column == column => Some("↓".to_string()),
+            _ => self
+                .session_sort_secondary
+                .iter()
+                .position(|sort| sort.column == column)
+                .map(|idx| {
+                    let sort = self.session_sort_secondary[idx];
+                    let direction = if sort.ascending { "↑" } else { "↓" };
+                    format!("{}{}", idx + 2, direction)
+                }),
         }
     }
 
@@ -1534,6 +1591,21 @@ fn cmp_str(lhs: &str, rhs: &str) -> Ordering {
     lhs.to_lowercase().cmp(&rhs.to_lowercase())
 }
 
+fn format_sort_layers(layers: &[SessionSort]) -> String {
+    layers
+        .iter()
+        .map(|sort| {
+            let direction = if sort.ascending {
+                "ascending"
+            } else {
+                "descending"
+            };
+            format!("{} {}", sort.column.label(), direction)
+        })
+        .collect::<Vec<_>>()
+        .join(" > ")
+}
+
 fn status_rank(status: &SessionStatus) -> u8 {
     match status {
         SessionStatus::Thinking => 0,
@@ -1741,6 +1813,54 @@ mod tests {
 
         app.set_session_sort_ascending();
         assert_eq!(app.visible_indices(), vec![0, 1]);
+    }
+
+    #[test]
+    fn multi_layer_sort_uses_previous_primary_as_tiebreaker() {
+        let mut app = App::new_with_config(
+            Theme::default(),
+            &[],
+            crate::config::PanelVisibility::default(),
+        );
+        let mut waiting_newer = waiting_session("claude");
+        waiting_newer.session_id = "waiting-newer".into();
+        waiting_newer.status = SessionStatus::Waiting;
+        waiting_newer.last_turn_at = 300;
+        let mut executing_older = waiting_session("codex");
+        executing_older.session_id = "executing-older".into();
+        executing_older.status = SessionStatus::Executing;
+        executing_older.last_turn_at = 100;
+        let mut waiting_older = waiting_session("opencode");
+        waiting_older.session_id = "waiting-older".into();
+        waiting_older.status = SessionStatus::Waiting;
+        waiting_older.last_turn_at = 200;
+        app.sessions = vec![waiting_newer, executing_older, waiting_older];
+
+        app.toggle_session_sort(SessionSortColumn::Recent);
+        app.toggle_session_sort(SessionSortColumn::Status);
+
+        assert_eq!(app.visible_indices(), vec![1, 0, 2]);
+        assert_eq!(
+            app.session_sort,
+            Some(SessionSort {
+                column: SessionSortColumn::Status,
+                ascending: true,
+            })
+        );
+        assert_eq!(
+            app.session_sort_secondary,
+            vec![SessionSort {
+                column: SessionSortColumn::Recent,
+                ascending: false,
+            }]
+        );
+        assert_eq!(
+            app.session_sort_indicator(SessionSortColumn::Recent),
+            Some("2↓".to_string())
+        );
+
+        app.clear_secondary_session_sorts();
+        assert!(app.session_sort_secondary.is_empty());
     }
 
     #[test]

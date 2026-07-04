@@ -295,6 +295,7 @@ fn run_app(
                             }
                             KeyCode::Up => app.set_session_sort_ascending(),
                             KeyCode::Down => app.set_session_sort_descending(),
+                            KeyCode::Backspace => app.clear_secondary_session_sorts(),
                             _ => {}
                         }
                     } else if app.filter_active {

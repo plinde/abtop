@@ -63,7 +63,7 @@ impl Default for AppConfig {
     }
 }
 
-fn config_path() -> Option<PathBuf> {
+pub fn config_path() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join("abtop").join("config.toml"))
 }
 
@@ -440,5 +440,13 @@ mod tests {
         assert!(after.contains("session_sort = [\"status:asc\", \"recent:desc\"]"));
         assert!(!after.contains("session_sort = [\"recent:desc\"]"));
         assert!(after.contains("theme = \"btop\""));
+    }
+    #[test]
+    fn config_path_joins_abtop_subdir() {
+        let path = config_path();
+        // On any platform with a config dir, the path should end with abtop/config.toml
+        if let Some(p) = path {
+            assert!(p.ends_with("abtop/config.toml"));
+        }
     }
 }

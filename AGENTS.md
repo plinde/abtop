@@ -18,7 +18,7 @@ English is mandatory for all project-facing work and communication.
 
 ```
 src/
-├── main.rs                 # Entry, terminal setup, event loop, --setup flag
+├── main.rs                 # Entry, terminal setup, event loop, --version/--config-path/--setup flags
 ├── app.rs                  # App state, tick logic, key handling, summary generation
 ├── setup.rs                # StatusLine hook installation (abtop --setup)
 ├── ui/

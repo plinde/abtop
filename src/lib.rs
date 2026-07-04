@@ -99,6 +99,18 @@ pub fn run() -> io::Result<()> {
         return Ok(());
     }
 
+    // --config-path flag: print config.toml path and exit
+    if std::env::args().any(|a| a == "--config-path") {
+        match config::config_path() {
+            Some(p) => println!("{}", p.display()),
+            None => {
+                eprintln!("abtop: could not determine config directory");
+                std::process::exit(1);
+            }
+        }
+        return Ok(());
+    }
+
     // --update flag: self-update via GitHub releases installer
     if std::env::args().any(|a| a == "--update") {
         return run_update();

@@ -54,6 +54,7 @@ abtop                    # Launch TUI
 abtop --once             # Print snapshot and exit
 abtop --json             # Print one JSON snapshot and exit (for scripts/tools)
 abtop --setup            # Install rate limit collection hook
+abtop --config-path       # Print config.toml path and exit
 abtop --theme dracula    # Launch with a specific theme
 ```
 

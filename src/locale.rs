@@ -134,6 +134,7 @@ static LOCALE_EN: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("help.kill_session", "kill selected session");
     m.insert("help.kill_orphans", "kill orphan ports");
     m.insert("help.refresh", "force refresh");
+    m.insert("help.reset_view", "reset view to defaults");
     m.insert("help.quit", "quit");
     m.insert("help.view_menu", "open view menu");
     m.insert("help.tabs", "switch tab (work/usage/system)");
@@ -162,6 +163,7 @@ static LOCALE_EN: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("footer.quit", "quit");
     m.insert("footer.sessions", "sessions");
     m.insert("footer.auto", "auto");
+    m.insert("footer.reset", "reset");
     m.insert(
         "footer.sort_mode",
         "sort: arrows move/set primary, Enter add, Backspace remove, Esc/o done",
@@ -405,6 +407,7 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("help.kill_session", "终止选中的会话");
     m.insert("help.kill_orphans", "终止孤立端口");
     m.insert("help.refresh", "强制刷新");
+    m.insert("help.reset_view", "reset view to defaults");
     m.insert("help.quit", "退出");
     m.insert("help.view_menu", "打开视图菜单");
     m.insert("help.tabs", "切换标签 (工作/使用/系统)");
@@ -430,6 +433,7 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("footer.quit", "退出");
     m.insert("footer.sessions", "会话");
     m.insert("footer.auto", "自动");
+    m.insert("footer.reset", "reset");
     m.insert(
         "footer.sort_mode",
         "sort: arrows move/set primary, Enter add, Backspace remove, Esc/o done",

@@ -138,6 +138,8 @@ session_columns = [
   "model", "context", "tokens", "input", "output", "cache_r",
   "cache_w", "memory", "turn", "everything",
 ]
+# Saved session sort layers. Omit or use [] for the default unsorted view.
+session_sort = ["status:asc", "recent:desc"]
 ```
 
 `recent` shows the age of the most recent turn or activity for the session.
@@ -156,7 +158,10 @@ three layers; for example, press `↑` on `status`, then move to `recent` and
 press `Enter` to sort by status, with newest sessions first inside each
 status group. The `recent`, token, memory, turn-count, and total-token columns
 default to descending order; text and status columns default to ascending order.
-`O` reverses the current primary sort without entering sort mode.
+Confirmed sort changes are saved to `session_sort` and restored on the next
+launch. `O` reverses the current primary sort without entering sort mode. Press
+`R` to reset the view to default panels, default session columns, and no saved
+sort.
 
 ### Supported Languages
 
@@ -175,6 +180,7 @@ When `language` is unset, abtop auto-detects from `LANG` — any value starting 
 | `Enter`            | Jump to session terminal             |
 | `o`                | Enter/exit session sort mode          |
 | `O`                | Reverse current session sort          |
+| `R`                | Reset view to defaults                |
 | `←`/`→` in sort mode | Select sort column                  |
 | `↑`/`↓` in sort mode | Make cursor column primary asc/desc |
 | `Enter`/`Space` in sort mode | Add cursor as sort layer      |

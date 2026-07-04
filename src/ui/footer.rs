@@ -134,6 +134,13 @@ pub(crate) fn draw_footer(f: &mut Frame, app: &App, area: Rect, theme: &Theme) {
             Style::default().fg(theme.main_fg),
         ));
     }
+    if !compact {
+        spans.push(Span::styled("R", Style::default().fg(theme.hi_fg)));
+        spans.push(Span::styled(
+            format!(" {} ", t("footer.reset")),
+            Style::default().fg(theme.main_fg),
+        ));
+    }
     spans.push(Span::styled("q", Style::default().fg(theme.hi_fg)));
     spans.push(Span::styled(
         format!(" {} ", t("footer.quit")),

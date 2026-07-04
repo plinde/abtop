@@ -286,6 +286,7 @@ pub struct App {
     pub session_sort_mode: bool,
     pub session_sort_cursor: Option<SessionSort>,
     pub session_columns: Vec<SessionSortColumn>,
+    persist_view_preferences: bool,
     pub should_quit: bool,
     /// Token rate per tick (delta). Ring buffer for the braille graph.
     pub token_rates: VecDeque<f64>,
@@ -363,7 +364,19 @@ impl App {
         hidden_agents: &[String],
         panels: crate::config::PanelVisibility,
     ) -> Self {
-        Self::new_with_config_and_claude_dirs(theme, hidden_agents, panels, &[], false)
+        Self::new_for_tests(theme, hidden_agents, panels)
+    }
+
+    #[cfg(test)]
+    fn new_for_tests(
+        theme: Theme,
+        hidden_agents: &[String],
+        panels: crate::config::PanelVisibility,
+    ) -> Self {
+        let mut app =
+            Self::new_with_config_and_claude_dirs(theme, hidden_agents, panels, &[], false);
+        app.persist_view_preferences = false;
+        app
     }
 
     pub fn new_with_config_and_claude_dirs(
@@ -391,19 +404,41 @@ impl App {
         lock_theme: bool,
         session_columns: &[String],
     ) -> Self {
+        Self::new_with_config_and_claude_dirs_columns_and_sort(
+            theme,
+            hidden_agents,
+            panels,
+            claude_config_dirs,
+            lock_theme,
+            session_columns,
+            &[],
+        )
+    }
+
+    pub fn new_with_config_and_claude_dirs_columns_and_sort(
+        theme: Theme,
+        hidden_agents: &[String],
+        panels: crate::config::PanelVisibility,
+        claude_config_dirs: &[PathBuf],
+        lock_theme: bool,
+        session_columns: &[String],
+        session_sort: &[String],
+    ) -> Self {
         let (tx, rx) = mpsc::channel();
         let summaries = load_summary_cache();
         let mut collector =
             MultiCollector::with_hidden_and_claude_config_dirs(hidden_agents, claude_config_dirs);
         collector.set_mcp_suppress(true);
+        let sort_layers = normalize_session_sort_layers(session_sort);
         Self {
             sessions: Vec::new(),
             selected: 0,
-            session_sort: None,
-            session_sort_secondary: Vec::new(),
+            session_sort: sort_layers.first().copied(),
+            session_sort_secondary: sort_layers.iter().skip(1).copied().collect(),
             session_sort_mode: false,
             session_sort_cursor: None,
             session_columns: normalize_session_columns(session_columns),
+            persist_view_preferences: true,
             should_quit: false,
             token_rates: VecDeque::with_capacity(GRAPH_HISTORY_LEN),
             rate_limits: Vec::new(),
@@ -494,6 +529,9 @@ impl App {
     }
 
     fn persist_panel_visibility(&mut self) {
+        if !self.persist_view_preferences {
+            return;
+        }
         let panels = crate::config::PanelVisibility {
             context: self.show_context,
             quota: self.show_quota,
@@ -579,9 +617,66 @@ impl App {
     }
 
     fn persist_session_columns(&mut self) {
+        if !self.persist_view_preferences {
+            return;
+        }
         if let Err(e) = crate::config::save_session_columns(&self.session_columns) {
             self.set_status(format!("columns save failed: {}", e));
         }
+    }
+
+    fn persist_session_sort(&mut self) {
+        if !self.persist_view_preferences {
+            return;
+        }
+        if let Err(e) = crate::config::save_session_sort(&self.session_sort_layers()) {
+            self.set_status(format!("sort save failed: {}", e));
+        }
+    }
+
+    pub fn reset_view_defaults(&mut self) {
+        self.reset_view_defaults_in_memory();
+        if !self.persist_view_preferences {
+            self.set_status("view reset to defaults".to_string());
+            return;
+        }
+        let panels = crate::config::PanelVisibility::default();
+        let mut errors = Vec::new();
+        if let Err(e) = crate::config::save_panel_visibility(&panels) {
+            errors.push(format!("panels: {}", e));
+        }
+        if let Err(e) = crate::config::save_session_columns(&self.session_columns) {
+            errors.push(format!("columns: {}", e));
+        }
+        if let Err(e) = crate::config::save_session_sort(&[]) {
+            errors.push(format!("sort: {}", e));
+        }
+        if errors.is_empty() {
+            self.set_status("view reset to defaults".to_string());
+        } else {
+            self.set_status(format!("view reset save failed: {}", errors.join("; ")));
+        }
+    }
+
+    fn reset_view_defaults_in_memory(&mut self) {
+        let panels = crate::config::PanelVisibility::default();
+        self.show_context = panels.context;
+        self.show_quota = panels.quota;
+        self.show_tokens = panels.tokens;
+        self.show_projects = panels.projects;
+        self.show_ports = panels.ports;
+        self.show_sessions = panels.sessions;
+        self.show_mcp = panels.mcp;
+        self.session_columns = SessionSortColumn::DEFAULT_COLUMNS.to_vec();
+        self.session_sort = None;
+        self.session_sort_secondary.clear();
+        self.session_sort_cursor = None;
+        self.session_sort_mode = false;
+        self.filter_text.clear();
+        self.filter_active = false;
+        self.maximized_narrow_section = None;
+        self.clamp_narrow_tab();
+        self.clamp_selection_to_visible();
     }
 
     pub fn narrow_tab_visible(&self, tab: NarrowTab) -> bool {
@@ -1188,6 +1283,7 @@ impl App {
         }
         self.clamp_selection_to_visible();
         self.set_sort_status();
+        self.persist_session_sort();
     }
 
     pub fn remove_last_session_sort_layer(&mut self) {
@@ -1195,6 +1291,7 @@ impl App {
             self.session_sort = None;
         }
         self.set_sort_status();
+        self.persist_session_sort();
     }
 
     pub fn current_session_sort_cursor(&self) -> Option<SessionSort> {
@@ -1214,6 +1311,7 @@ impl App {
         self.session_sort = Some(SessionSort { column, ascending });
         self.clamp_selection_to_visible();
         self.set_sort_status();
+        self.persist_session_sort();
     }
 
     fn set_sort_status(&mut self) {
@@ -1226,6 +1324,7 @@ impl App {
     pub fn clear_secondary_session_sorts(&mut self) {
         self.session_sort_secondary.clear();
         self.set_sort_status();
+        self.persist_session_sort();
     }
 
     pub fn cycle_session_sort_column(&mut self) {
@@ -1251,6 +1350,7 @@ impl App {
         self.session_sort = Some(sort);
         self.clamp_selection_to_visible();
         self.set_sort_status();
+        self.persist_session_sort();
     }
 
     pub fn session_sort_indicator(&self, column: SessionSortColumn) -> Option<String> {
@@ -1686,6 +1786,61 @@ fn normalize_session_columns(raw: &[String]) -> Vec<SessionSortColumn> {
     }
 }
 
+fn normalize_session_sort_layers(raw: &[String]) -> Vec<SessionSort> {
+    let mut layers = Vec::new();
+    for sort in raw.iter().filter_map(|s| parse_session_sort_layer(s)) {
+        if !layers.iter().any(|layer: &SessionSort| layer.column == sort.column) {
+            layers.push(sort);
+        }
+        if layers.len() == MAX_SESSION_SORT_LAYERS {
+            break;
+        }
+    }
+    layers
+}
+
+fn parse_session_sort_layer(raw: &str) -> Option<SessionSort> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+
+    let (column_raw, direction_raw) = if let Some(column) = raw.strip_prefix('-') {
+        (column, Some("desc"))
+    } else if let Some(column) = raw.strip_prefix('+') {
+        (column, Some("asc"))
+    } else if let Some((column, direction)) = raw.split_once(':') {
+        (column, Some(direction))
+    } else if let Some((column, direction)) = raw.split_once(' ') {
+        (column, Some(direction))
+    } else {
+        (raw, None)
+    };
+
+    let column = SessionSortColumn::from_id(column_raw)?;
+    let ascending = match direction_raw.map(|s| s.trim().to_ascii_lowercase()) {
+        Some(direction)
+            if matches!(
+                direction.as_str(),
+                "asc" | "ascending" | "up" | "true" | "+"
+            ) =>
+        {
+            true
+        }
+        Some(direction)
+            if matches!(
+                direction.as_str(),
+                "desc" | "descending" | "down" | "false" | "-"
+            ) =>
+        {
+            false
+        }
+        Some(_) => return None,
+        None => column.default_ascending(),
+    };
+    Some(SessionSort { column, ascending })
+}
+
 fn session_column_order(column: SessionSortColumn) -> usize {
     SessionSortColumn::ALL
         .iter()
@@ -1971,6 +2126,117 @@ mod tests {
                 ascending: false,
             }]
         );
+    }
+
+    #[test]
+    fn configured_session_sort_resumes_on_launch() {
+        let app = App::new_with_config_and_claude_dirs_columns_and_sort(
+            Theme::default(),
+            &[],
+            crate::config::PanelVisibility::default(),
+            &[],
+            false,
+            &[],
+            &[
+                "status:asc".to_string(),
+                "recent:desc".to_string(),
+                "pid:desc".to_string(),
+            ],
+        );
+
+        assert_eq!(
+            app.session_sort,
+            Some(SessionSort {
+                column: SessionSortColumn::Status,
+                ascending: true,
+            })
+        );
+        assert_eq!(
+            app.session_sort_secondary,
+            vec![
+                SessionSort {
+                    column: SessionSortColumn::Recent,
+                    ascending: false,
+                },
+                SessionSort {
+                    column: SessionSortColumn::Pid,
+                    ascending: false,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn configured_session_sort_ignores_unknown_duplicate_and_extra_layers() {
+        let layers = normalize_session_sort_layers(&[
+            "status:asc".to_string(),
+            "bogus:desc".to_string(),
+            "status:desc".to_string(),
+            "-recent".to_string(),
+            "pid down".to_string(),
+            "project:asc".to_string(),
+        ]);
+
+        assert_eq!(
+            layers,
+            vec![
+                SessionSort {
+                    column: SessionSortColumn::Status,
+                    ascending: true,
+                },
+                SessionSort {
+                    column: SessionSortColumn::Recent,
+                    ascending: false,
+                },
+                SessionSort {
+                    column: SessionSortColumn::Pid,
+                    ascending: false,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn reset_view_defaults_clears_sort_and_restores_columns_in_memory() {
+        let mut app = App::new_with_config_and_claude_dirs_columns_and_sort(
+            Theme::default(),
+            &[],
+            crate::config::PanelVisibility {
+                context: false,
+                quota: false,
+                tokens: false,
+                projects: false,
+                ports: false,
+                sessions: true,
+                mcp: false,
+            },
+            &[],
+            false,
+            &["ai".to_string()],
+            &["status:asc".to_string(), "recent:desc".to_string()],
+        );
+        app.filter_text = "claude".to_string();
+        app.filter_active = true;
+        app.session_sort_mode = true;
+
+        app.reset_view_defaults_in_memory();
+
+        assert_eq!(app.session_sort, None);
+        assert!(app.session_sort_secondary.is_empty());
+        assert_eq!(
+            app.session_columns,
+            SessionSortColumn::DEFAULT_COLUMNS.to_vec()
+        );
+        assert!(app.show_context);
+        assert!(app.show_quota);
+        assert!(app.show_tokens);
+        assert!(app.show_projects);
+        assert!(app.show_ports);
+        assert!(app.show_sessions);
+        assert!(app.show_mcp);
+        assert!(app.filter_text.is_empty());
+        assert!(!app.filter_active);
+        assert!(!app.session_sort_mode);
     }
 
     #[test]

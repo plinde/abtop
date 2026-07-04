@@ -81,13 +81,14 @@ use std::time::Duration;
 /// Construct a headless `App` from loaded config + theme. Shared by the
 /// `--json` and `--once` entry points.
 fn build_app(theme: theme::Theme, cfg: &config::AppConfig) -> App {
-    App::new_with_config_and_claude_dirs_and_columns(
+    App::new_with_config_and_claude_dirs_columns_and_sort(
         theme,
         &cfg.hidden_agents,
         cfg.panels,
         &cfg.claude_config_dirs,
         cfg.lock_theme,
         &cfg.session_columns,
+        &cfg.session_sort,
     )
 }
 
@@ -206,6 +207,7 @@ pub fn run() -> io::Result<()> {
         &cfg.claude_config_dirs,
         cfg.lock_theme,
         &cfg.session_columns,
+        &cfg.session_sort,
     );
 
     // Always attempt both cleanup steps regardless of app result
@@ -227,14 +229,16 @@ fn run_app(
     claude_config_dirs: &[std::path::PathBuf],
     lock_theme: bool,
     session_columns: &[String],
+    session_sort: &[String],
 ) -> io::Result<()> {
-    let mut app = App::new_with_config_and_claude_dirs_and_columns(
+    let mut app = App::new_with_config_and_claude_dirs_columns_and_sort(
         initial_theme.unwrap_or_default(),
         hidden_agents,
         panels,
         claude_config_dirs,
         lock_theme,
         session_columns,
+        session_sort,
     );
     if demo_mode {
         demo::populate_demo(&mut app);
@@ -296,6 +300,7 @@ fn run_app(
                             KeyCode::Up => app.set_session_sort_ascending(),
                             KeyCode::Down => app.set_session_sort_descending(),
                             KeyCode::Backspace => app.remove_last_session_sort_layer(),
+                            KeyCode::Char('R') => app.reset_view_defaults(),
                             _ => {}
                         }
                     } else if app.filter_active {
@@ -328,6 +333,7 @@ fn run_app(
                                 }
                             }
                             KeyCode::Char('O') => app.reverse_session_sort(),
+                            KeyCode::Char('R') => app.reset_view_defaults(),
                             KeyCode::Char('w') => app.set_narrow_tab(app::NarrowTab::Work),
                             KeyCode::Char('u') => app.set_narrow_tab(app::NarrowTab::Usage),
                             KeyCode::Char('s') => app.set_narrow_tab(app::NarrowTab::System),

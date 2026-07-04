@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::app::SessionSortColumn;
+use crate::app::{SessionSort, SessionSortColumn};
 
 #[derive(Clone, Copy)]
 pub struct PanelVisibility {
@@ -38,6 +38,8 @@ pub struct AppConfig {
     pub panels: PanelVisibility,
     /// Ordered list of session overview columns to show when space allows.
     pub session_columns: Vec<String>,
+    /// Ordered session sort layers, e.g. ["status:asc", "recent:desc"].
+    pub session_sort: Vec<String>,
     /// UI language override. Empty string means auto-detect from `LANG`.
     /// Recognized values: "en", "zh" (anything starting with "zh" maps to Simplified Chinese).
     pub language: String,
@@ -54,6 +56,7 @@ impl Default for AppConfig {
             claude_config_dirs: Vec::new(),
             panels: PanelVisibility::default(),
             session_columns: Vec::new(),
+            session_sort: Vec::new(),
             language: String::new(),
             lock_theme: false,
         }
@@ -104,6 +107,10 @@ fn parse_config_body(content: &str) -> AppConfig {
             }
             if key == "session_columns" {
                 config.session_columns = parse_string_array(val);
+                continue;
+            }
+            if key == "session_sort" {
+                config.session_sort = parse_string_array(val);
                 continue;
             }
             let val = val.trim_matches('"').trim_matches('\'');
@@ -191,6 +198,23 @@ pub fn save_session_columns(columns: &[SessionSortColumn]) -> Result<(), String>
         .collect::<Vec<_>>()
         .join(", ");
     write_with_updates(&[("session_columns", format!("[{}]", rendered))])
+}
+
+pub fn save_session_sort(layers: &[SessionSort]) -> Result<(), String> {
+    let rendered = render_session_sort(layers);
+    write_with_updates(&[("session_sort", rendered)])
+}
+
+fn render_session_sort(layers: &[SessionSort]) -> String {
+    let rendered = layers
+        .iter()
+        .map(|sort| {
+            let direction = if sort.ascending { "asc" } else { "desc" };
+            format!("\"{}:{}\"", sort.column.id(), direction)
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("[{}]", rendered)
 }
 
 /// Read the config, replace or append each (key, value) pair, write it back.
@@ -292,6 +316,29 @@ mod tests {
         assert_eq!(cfg.session_columns, vec!["ai", "cache_r", "everything"]);
     }
 
+    #[test]
+    fn parse_config_body_loads_session_sort() {
+        let cfg = parse_config_body(r#"session_sort = ["status:asc", "recent:desc"]"#);
+
+        assert_eq!(cfg.session_sort, vec!["status:asc", "recent:desc"]);
+    }
+
+    #[test]
+    fn render_session_sort_writes_column_and_direction() {
+        let rendered = render_session_sort(&[
+            SessionSort {
+                column: SessionSortColumn::Status,
+                ascending: true,
+            },
+            SessionSort {
+                column: SessionSortColumn::Recent,
+                ascending: false,
+            },
+        ]);
+
+        assert_eq!(rendered, r#"["status:asc", "recent:desc"]"#);
+    }
+
     fn theme_update(name: &str) -> Vec<(&'static str, String)> {
         vec![("theme", format!("\"{}\"", name))]
     }
@@ -381,6 +428,17 @@ mod tests {
         let after = rewrite_kv_lines(before, &updates);
         assert!(after.contains("session_columns = [\"ai\", \"cache_r\"]"));
         assert!(!after.contains("session_columns = [\"ai\"]"));
+        assert!(after.contains("theme = \"btop\""));
+    }
+
+    #[test]
+    fn rewrite_session_sort_replaces_existing() {
+        let before = "theme = \"btop\"\nsession_sort = [\"recent:desc\"]\n";
+        let updates: Vec<(&str, String)> =
+            vec![("session_sort", "[\"status:asc\", \"recent:desc\"]".to_string())];
+        let after = rewrite_kv_lines(before, &updates);
+        assert!(after.contains("session_sort = [\"status:asc\", \"recent:desc\"]"));
+        assert!(!after.contains("session_sort = [\"recent:desc\"]"));
         assert!(after.contains("theme = \"btop\""));
     }
 }

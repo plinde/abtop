@@ -1208,8 +1208,6 @@ mod tests {
             .find(|(tab, _)| *tab == NarrowTab::Usage)
             .map(|(_, area)| *area)
             .unwrap();
-        let separator_x = usage_area.x - 1;
-
         assert_eq!(
             click_target(&app, area, usage_area.x, tab_area.y),
             Some(ClickTarget::NarrowTab(NarrowTab::Usage))

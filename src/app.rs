@@ -1266,9 +1266,10 @@ impl App {
     }
 
     fn apply_session_sort_layer(&mut self, sort: SessionSort) {
-        if self.session_sort.is_none() {
-            self.session_sort = Some(sort);
-        } else if self.session_sort.is_some_and(|primary| primary.column == sort.column) {
+        if self
+            .session_sort
+            .is_none_or(|primary| primary.column == sort.column)
+        {
             self.session_sort = Some(sort);
         } else if let Some(pos) = self
             .session_sort_secondary

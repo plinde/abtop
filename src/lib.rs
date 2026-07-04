@@ -199,15 +199,17 @@ pub fn run() -> io::Result<()> {
 
     let app_result = run_app(
         &mut terminal,
-        demo_mode,
-        initial_theme,
-        exit_on_jump,
-        &cfg.hidden_agents,
-        cfg.panels,
-        &cfg.claude_config_dirs,
-        cfg.lock_theme,
-        &cfg.session_columns,
-        &cfg.session_sort,
+        RunAppOptions {
+            demo_mode,
+            initial_theme,
+            exit_on_jump,
+            hidden_agents: &cfg.hidden_agents,
+            panels: cfg.panels,
+            claude_config_dirs: &cfg.claude_config_dirs,
+            lock_theme: cfg.lock_theme,
+            session_columns: &cfg.session_columns,
+            session_sort: &cfg.session_sort,
+        },
     );
 
     // Always attempt both cleanup steps regardless of app result
@@ -219,28 +221,32 @@ pub fn run() -> io::Result<()> {
     app_result.and(r1).and(r2).and(r3)
 }
 
-fn run_app(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+struct RunAppOptions<'a> {
     demo_mode: bool,
     initial_theme: Option<theme::Theme>,
     exit_on_jump: bool,
-    hidden_agents: &[String],
+    hidden_agents: &'a [String],
     panels: config::PanelVisibility,
-    claude_config_dirs: &[std::path::PathBuf],
+    claude_config_dirs: &'a [std::path::PathBuf],
     lock_theme: bool,
-    session_columns: &[String],
-    session_sort: &[String],
+    session_columns: &'a [String],
+    session_sort: &'a [String],
+}
+
+fn run_app(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    opts: RunAppOptions<'_>,
 ) -> io::Result<()> {
     let mut app = App::new_with_config_and_claude_dirs_columns_and_sort(
-        initial_theme.unwrap_or_default(),
-        hidden_agents,
-        panels,
-        claude_config_dirs,
-        lock_theme,
-        session_columns,
-        session_sort,
+        opts.initial_theme.unwrap_or_default(),
+        opts.hidden_agents,
+        opts.panels,
+        opts.claude_config_dirs,
+        opts.lock_theme,
+        opts.session_columns,
+        opts.session_sort,
     );
-    if demo_mode {
+    if opts.demo_mode {
         demo::populate_demo(&mut app);
     } else {
         app.tick();
@@ -316,7 +322,7 @@ fn run_app(
                     } else {
                         match key.code {
                             KeyCode::Char('q') => app.quit(),
-                            KeyCode::Char('r') if !demo_mode => app.tick(),
+                            KeyCode::Char('r') if !opts.demo_mode => app.tick(),
                             KeyCode::Down | KeyCode::Char('j') => app.select_next(),
                             KeyCode::Up | KeyCode::Char('k') => app.select_prev(),
                             KeyCode::Right => app.select_next_narrow_tab(),
@@ -341,8 +347,8 @@ fn run_app(
                                 app.maximize_active_narrow_section()
                             }
                             KeyCode::Char('-') => app.restore_narrow_sections(),
-                            KeyCode::Char('x') if !demo_mode => app.kill_selected(),
-                            KeyCode::Char('X') if !demo_mode => app.kill_orphan_ports(),
+                            KeyCode::Char('x') if !opts.demo_mode => app.kill_selected(),
+                            KeyCode::Char('X') if !opts.demo_mode => app.kill_orphan_ports(),
                             KeyCode::Char('t') if !app.lock_theme => app.cycle_theme(),
                             KeyCode::Char('t') => app.tree_view = !app.tree_view,
                             KeyCode::Char('T') if !app.lock_theme => app.tree_view = !app.tree_view,
@@ -358,8 +364,8 @@ fn run_app(
                             }
                             KeyCode::Esc if !app.filter_text.is_empty() => app.clear_filter(),
                             KeyCode::Char('f') | KeyCode::Char('F') => app.toggle_file_audit(),
-                            KeyCode::Enter if !demo_mode => match app.jump_to_session() {
-                                JumpOutcome::Jumped if exit_on_jump => app.quit(),
+                            KeyCode::Enter if !opts.demo_mode => match app.jump_to_session() {
+                                JumpOutcome::Jumped if opts.exit_on_jump => app.quit(),
                                 JumpOutcome::Failed(msg) => app.set_status(msg),
                                 JumpOutcome::Jumped | JumpOutcome::NoOp => {}
                             },
@@ -379,7 +385,7 @@ fn run_app(
             false
         };
 
-        if demo_mode {
+        if opts.demo_mode {
             // Rotate token rates to animate the sparkline
             if let Some(front) = app.token_rates.pop_front() {
                 app.token_rates.push_back(front);

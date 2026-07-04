@@ -321,36 +321,50 @@ cargo clippy                   # Lint
 
 ## Release Process
 
-1. Pick the target semver version and update both `Cargo.toml` and `Cargo.lock`.
-2. Verify the package locally:
+This fork releases manually. GitHub Actions and crates.io publishing are intentionally not used.
+
+Hard rules:
+- Do **not** add, restore, or rely on GitHub Actions release/publish workflows.
+- Do **not** run `cargo publish`, `cargo publish --dry-run`, or publish this fork to crates.io.
+- Do **not** use cargo-dist automation as the release authority. `dist-workspace.toml` may exist, but releases are local/manual.
+- Use Cargo only for local verification and local binary builds (`cargo test`, `cargo build --release`, etc.).
+
+Manual release steps:
+
+1. Pick the next fork prerelease version, normally `X.Y.Z-plindeN`, and update both `Cargo.toml` and `Cargo.lock`.
+2. Verify locally:
    ```bash
    cargo test
    cargo clippy -- -D warnings
    cargo build --release
-   cargo publish --dry-run
    ```
-3. Commit and merge or push the version bump to `main`:
+   On macOS, sign the release binary after building:
+   ```bash
+   codesign --force --sign - target/release/abtop
+   ```
+3. Commit and push the version bump to `main`:
    ```bash
    git add Cargo.toml Cargo.lock
-   git commit -m "chore: bump version to X.Y.Z"
+   git commit -m "chore: bump version to X.Y.Z-plindeN"
    git push origin main
    ```
-4. From a clean, up-to-date `main`, create and push an annotated release tag:
+4. Build/package binaries manually for each supported platform. At minimum:
+   - macOS arm64 from this machine
+   - Linux x86_64 from behemoth when Linux packaging is needed
+   Create tarballs such as `abtop-aarch64-apple-darwin.tar.gz` and record SHA-256 sums.
+5. From a clean, up-to-date `main`, create the GitHub Release manually:
    ```bash
-   git tag -a vX.Y.Z -m "vX.Y.Z"
-   git push origin vX.Y.Z
+   git tag -a vX.Y.Z-plindeN -m "vX.Y.Z-plindeN"
+   git push origin vX.Y.Z-plindeN
+   gh release create vX.Y.Z-plindeN -R plinde/abtop --prerelease <tarballs> SHA256SUMS
    ```
-5. Watch the tag-triggered workflows:
+6. Update `plinde/homebrew-tap` manually with the new release URLs and SHA-256 values, then verify install with:
    ```bash
-   gh run list --workflow Release --limit 5
-   gh run list --workflow "Publish to crates.io" --limit 5
+   brew reinstall plinde/tap/abtop
    ```
-6. `release.yml` builds platform binaries, creates the GitHub Release, and updates the Homebrew formula.
-7. `publish.yml` runs `cargo publish` to crates.io automatically.
 
-**Do NOT run `cargo publish` or `gh release create` manually** — the CI workflows handle both.
-**Do NOT push the tag before the version bump is on `main`.**
-**Do NOT reuse a release tag after a failed publish; bump to a new patch version instead.**
+Do not push a tag before the version bump is on `main`.
+Do not reuse a release tag after a failed release; bump to a new fork prerelease instead.
 
 ## Non-Goals (v0.1)
 

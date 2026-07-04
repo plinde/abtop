@@ -81,7 +81,7 @@ Panel descriptions:
 - **projects** (always visible): Per-project git branch + added/modified file counts.
 - **⁴ports**: Agent-spawned open ports + orphan ports (from dead sessions). Conflict detection.
 - **⁵sessions**: Full-width panel below mid row. Session list table (top) + selected session detail (bottom), separated by divider.
-  The default session columns start with `AI`, `Recent`, then PID/project/session metadata. `Recent` is the age of the most recent turn/activity and sorts newest-first by default. Session sorting supports up to three layers; selecting a new primary keeps the previous primary as the next tiebreaker.
+  The default session columns start with `AI`, `Recent`, then PID/project/session metadata. `Recent` is the age of the most recent turn/activity and sorts newest-first by default. Session sorting supports up to three explicit layers; in sort mode, move the cursor to a column and press Enter/Space to add it as the next layer.
 
 ## Data Sources
 
@@ -279,8 +279,9 @@ Tracks child processes that have open ports. When a parent session dies but the 
 | `o` | Enter/exit session sort mode |
 | `O` | Reverse current session sort |
 | `←`/`→` in sort mode | Select sort column |
-| `↑`/`↓` in sort mode | Set ascending/descending sort direction |
-| `Backspace` in sort mode | Clear secondary sort layers |
+| `↑`/`↓` in sort mode | Make cursor column primary ascending/descending |
+| `Enter`/`Space` in sort mode | Add cursor as sort layer |
+| `Backspace` in sort mode | Remove last sort layer |
 | `x` | Kill selected session (SIGKILL) |
 | `X` | Kill all orphan ports |
 | `q` | Quit |

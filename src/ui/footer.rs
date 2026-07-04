@@ -51,7 +51,14 @@ pub(crate) fn draw_footer(f: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     }
 
     if app.session_sort_mode {
-        let sort_text = app
+        let cursor_text = app
+            .current_session_sort_cursor()
+            .map(|sort| {
+                let direction = if sort.ascending { "asc" } else { "desc" };
+                format!(" cursor {} {} ", sort.column.label(), direction)
+            })
+            .unwrap_or_default();
+        let layers_text = app
             .session_sort_layers()
             .iter()
             .map(|sort| {
@@ -60,15 +67,16 @@ pub(crate) fn draw_footer(f: &mut Frame, app: &App, area: Rect, theme: &Theme) {
             })
             .collect::<Vec<_>>()
             .join(" > ");
-        let sort_text = if sort_text.is_empty() {
+        let layers_text = if layers_text.is_empty() {
             String::new()
         } else {
-            format!(" {sort_text} ")
+            format!(" layers {layers_text} ")
         };
         let spans = vec![
             Span::styled(" o ", Style::default().fg(theme.hi_fg)),
             Span::styled(t("footer.sort_mode"), Style::default().fg(theme.main_fg)),
-            Span::styled(sort_text, Style::default().fg(theme.status_fg)),
+            Span::styled(cursor_text, Style::default().fg(theme.title)),
+            Span::styled(layers_text, Style::default().fg(theme.status_fg)),
         ];
         f.render_widget(Paragraph::new(Line::from(spans)), area);
         return;

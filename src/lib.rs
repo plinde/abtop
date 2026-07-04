@@ -283,10 +283,10 @@ fn run_app(
                         let area = Rect::new(0, 0, size.width, size.height);
                         let sort_columns = ui::visible_session_sort_columns(&app, area);
                         match key.code {
-                            KeyCode::Esc
-                            | KeyCode::Enter
-                            | KeyCode::Char('o')
-                            | KeyCode::Char('q') => app.close_session_sort_mode(),
+                            KeyCode::Esc | KeyCode::Char('o') | KeyCode::Char('q') => {
+                                app.close_session_sort_mode()
+                            }
+                            KeyCode::Enter | KeyCode::Char(' ') => app.apply_session_sort_cursor(),
                             KeyCode::Right => {
                                 app.select_next_session_sort_column_from(&sort_columns)
                             }
@@ -295,7 +295,7 @@ fn run_app(
                             }
                             KeyCode::Up => app.set_session_sort_ascending(),
                             KeyCode::Down => app.set_session_sort_descending(),
-                            KeyCode::Backspace => app.clear_secondary_session_sorts(),
+                            KeyCode::Backspace => app.remove_last_session_sort_layer(),
                             _ => {}
                         }
                     } else if app.filter_active {

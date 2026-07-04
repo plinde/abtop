@@ -147,15 +147,16 @@ all tokens including `cache_r` and `cache_w`. Additional available columns are
 columns without editing the file directly.
 
 Session columns are sortable from the table header with the mouse, or from the
-keyboard by pressing `o` to enter sort mode. In sort mode, `←`/`→` selects the
-primary sort column, `↑` sorts ascending, `↓` sorts descending, `Backspace`
-clears secondary sort layers, and `Esc`, `Enter`, or `o` exits sort mode.
-Selecting a different primary keeps the previous primary as a tiebreaker, up
-to three layers; for example, select `recent` and then `status` to sort by
-status, with newest sessions first inside each status group. The `recent`,
-token, memory, turn-count, and total-token columns default to descending order;
-text and status columns default to ascending order. `O` reverses the current
-primary sort without entering sort mode.
+keyboard by pressing `o` to enter sort mode. In sort mode, `←`/`→` moves a
+cursor between visible columns, `↑`/`↓` makes the cursor column the primary
+sort in that direction, and `Enter` or `Space` adds the cursor with its current
+direction as the next sort layer. `Backspace` removes the last layer, and `Esc`
+or `o` exits sort mode. Layers are applied in the order you add them, up to
+three layers; for example, press `↑` on `status`, then move to `recent` and
+press `Enter` to sort by status, with newest sessions first inside each
+status group. The `recent`, token, memory, turn-count, and total-token columns
+default to descending order; text and status columns default to ascending order.
+`O` reverses the current primary sort without entering sort mode.
 
 ### Supported Languages
 
@@ -175,8 +176,9 @@ When `language` is unset, abtop auto-detects from `LANG` — any value starting 
 | `o`                | Enter/exit session sort mode          |
 | `O`                | Reverse current session sort          |
 | `←`/`→` in sort mode | Select sort column                  |
-| `↑`/`↓` in sort mode | Set sort direction                  |
-| `Backspace` in sort mode | Clear secondary sort layers      |
+| `↑`/`↓` in sort mode | Make cursor column primary asc/desc |
+| `Enter`/`Space` in sort mode | Add cursor as sort layer      |
+| `Backspace` in sort mode | Remove last sort layer           |
 | `x`                | Kill selected session                |
 | `X`                | Kill all orphan ports                |
 | `t`                | Cycle theme                          |

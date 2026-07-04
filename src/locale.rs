@@ -128,7 +128,7 @@ static LOCALE_EN: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("help.sort", "sort sessions");
     m.insert(
         "help.sort_mode",
-        "sort mode: arrows set primary, Backspace clears layers",
+        "sort mode: arrows move/set primary, Enter adds layer, Backspace removes",
     );
     m.insert("help.clear_filter", "clear filter / close overlay");
     m.insert("help.kill_session", "kill selected session");
@@ -164,7 +164,7 @@ static LOCALE_EN: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("footer.auto", "auto");
     m.insert(
         "footer.sort_mode",
-        "sort: arrows primary, Backspace clear layers, Esc/o done",
+        "sort: arrows move/set primary, Enter add, Backspace remove, Esc/o done",
     );
     m.insert("footer.zoom_out", "Esc zoom out");
     m.insert("footer.peak_hours", "Claude Peak Hours");
@@ -399,7 +399,7 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("help.sort", "sort sessions");
     m.insert(
         "help.sort_mode",
-        "sort mode: arrows set primary, Backspace clears layers",
+        "sort mode: arrows move/set primary, Enter adds layer, Backspace removes",
     );
     m.insert("help.clear_filter", "清除过滤 / 关闭覆盖");
     m.insert("help.kill_session", "终止选中的会话");
@@ -432,7 +432,7 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("footer.auto", "自动");
     m.insert(
         "footer.sort_mode",
-        "sort: arrows primary, Backspace clear layers, Esc/o done",
+        "sort: arrows move/set primary, Enter add, Backspace remove, Esc/o done",
     );
     m.insert("footer.zoom_out", "Esc 缩小");
     m.insert("footer.peak_hours", "Claude 高峰时段");

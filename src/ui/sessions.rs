@@ -1071,10 +1071,15 @@ fn sortable_header<'a>(
     label: &str,
     style: Style,
 ) -> Cell<'a> {
+    let cursor = app
+        .current_session_sort_cursor()
+        .filter(|_| app.session_sort_mode)
+        .is_some_and(|sort| sort.column == column);
+    let cursor_indicator = if cursor { "▸" } else { "" };
     let text = if let Some(indicator) = app.session_sort_indicator(column) {
-        format!("{indicator}{label}")
+        format!("{cursor_indicator}{indicator}{label}")
     } else {
-        label.to_string()
+        format!("{cursor_indicator}{label}")
     };
     Cell::from(Span::styled(text, style))
 }

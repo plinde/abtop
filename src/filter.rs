@@ -1,21 +1,24 @@
 //! Session filter query parsing.
 //!
 //! The `/` filter box accepts free-text substring terms plus optional
-//! duration predicates that filter sessions by how recently they were active
-//! or how old they are. Grammar (whitespace-separated tokens):
+//! duration predicates that filter sessions by activity recency or age.
+//! Grammar (whitespace-separated tokens):
 //!
 //! ```text
 //! <field><op><number><unit>
 //! ```
 //!
-//! - field: `idle` / `active` (both match last-turn age), `age` (session age)
+//! - field: `time` (time since last turn), `age` (time since session start)
 //! - op:    `>`, `<`, `>=`, `<=`
 //! - unit:  `s`, `m`, `h`, `d`
 //!
+//! `time` unifies "active" and "idle": the operator carries the direction, so
+//! there is no need for separate keywords.
+//!
 //! Examples:
-//! - `active<24h`  -> sessions with a turn in the last 24 hours
-//! - `idle>3d`     -> sessions idle (no turn) for more than 3 days
-//! - `age>=7d`     -> sessions started at least 7 days ago
+//! - `time<24h`  -> sessions with a turn in the last 24 hours (active)
+//! - `time>3d`   -> sessions with no turn for more than 3 days (stale)
+//! - `age>=7d`   -> sessions started at least 7 days ago
 //!
 //! Any token that is not a valid predicate is treated as substring text.
 //! Multiple predicates are ANDed together; text terms and predicates combine
@@ -28,7 +31,7 @@ use std::time::Duration;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DurationField {
     /// Time since the session's most recent turn (`last_turn_age`).
-    Idle,
+    Time,
     /// Time since the session started (`elapsed`).
     Age,
 }
@@ -53,7 +56,7 @@ impl DurationOp {
     }
 }
 
-/// A single parsed duration predicate, e.g. `idle>3d`.
+/// A single parsed duration predicate, e.g. `time>3d`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DurationPredicate {
     pub field: DurationField,
@@ -66,10 +69,8 @@ impl DurationPredicate {
     /// not match the predicate grammar (caller treats it as substring text).
     fn parse(token: &str) -> Option<Self> {
         let lower = token.to_ascii_lowercase();
-        let (field, rest) = if let Some(r) = lower.strip_prefix("idle") {
-            (DurationField::Idle, r)
-        } else if let Some(r) = lower.strip_prefix("active") {
-            (DurationField::Idle, r)
+        let (field, rest) = if let Some(r) = lower.strip_prefix("time") {
+            (DurationField::Time, r)
         } else if let Some(r) = lower.strip_prefix("age") {
             (DurationField::Age, r)
         } else {
@@ -97,9 +98,9 @@ impl DurationPredicate {
         })
     }
 
-    fn matches(&self, idle: Duration, age: Duration) -> bool {
+    fn matches(&self, time: Duration, age: Duration) -> bool {
         let value = match self.field {
-            DurationField::Idle => idle,
+            DurationField::Time => time,
             DurationField::Age => age,
         };
         self.op.eval(value, self.threshold)
@@ -175,10 +176,10 @@ impl SessionQuery {
         &self.text
     }
 
-    /// Evaluate the duration predicates against a session's idle and age
-    /// durations. Text matching is handled separately by the caller.
-    pub fn duration_matches(&self, idle: Duration, age: Duration) -> bool {
-        self.predicates.iter().all(|p| p.matches(idle, age))
+    /// Evaluate the duration predicates against a session's time-since-last-turn
+    /// and age durations. Text matching is handled separately by the caller.
+    pub fn duration_matches(&self, time: Duration, age: Duration) -> bool {
+        self.predicates.iter().all(|p| p.matches(time, age))
     }
 }
 
@@ -213,60 +214,52 @@ mod tests {
     }
 
     #[test]
-    fn parses_active_within() {
-        let q = SessionQuery::parse("active<24h");
+    fn time_less_than_matches_active_window() {
+        let q = SessionQuery::parse("time<24h");
         assert!(q.has_duration_predicate());
         assert_eq!(q.text(), "");
-        // 1h idle is within 24h -> matches.
+        // 1h since last turn is within 24h -> matches (active).
         assert!(q.duration_matches(dur(3_600), dur(0)));
-        // 25h idle -> excluded.
+        // 25h -> excluded.
         assert!(!q.duration_matches(dur(90_000), dur(0)));
     }
 
     #[test]
-    fn parses_idle_more_than() {
-        let q = SessionQuery::parse("idle>3d");
-        // 4 days idle -> stale, matches.
+    fn time_greater_than_matches_stale() {
+        let q = SessionQuery::parse("time>3d");
+        // 4 days since last turn -> stale, matches.
         assert!(q.duration_matches(dur(4 * 86_400), dur(0)));
-        // 2 days idle -> not stale.
+        // 2 days -> not stale.
         assert!(!q.duration_matches(dur(2 * 86_400), dur(0)));
-    }
-
-    #[test]
-    fn active_and_idle_share_field() {
-        // active<Nh and idle<Nh are equivalent.
-        let a = SessionQuery::parse("active<1h");
-        let b = SessionQuery::parse("idle<1h");
-        assert_eq!(a.duration_matches(dur(30), dur(0)), b.duration_matches(dur(30), dur(0)));
     }
 
     #[test]
     fn age_field_uses_second_argument() {
         let q = SessionQuery::parse("age>7d");
-        // idle small, age large -> matches on age.
+        // time small, age large -> matches on age.
         assert!(q.duration_matches(dur(10), dur(8 * 86_400)));
         assert!(!q.duration_matches(dur(10), dur(6 * 86_400)));
     }
 
     #[test]
     fn ge_and_le_are_inclusive() {
-        let ge = SessionQuery::parse("idle>=1h");
+        let ge = SessionQuery::parse("time>=1h");
         assert!(ge.duration_matches(dur(3_600), dur(0)));
-        let le = SessionQuery::parse("idle<=1h");
+        let le = SessionQuery::parse("time<=1h");
         assert!(le.duration_matches(dur(3_600), dur(0)));
     }
 
     #[test]
     fn all_units_parse() {
-        assert!(SessionQuery::parse("idle>30s").has_duration_predicate());
-        assert!(SessionQuery::parse("idle>30m").has_duration_predicate());
-        assert!(SessionQuery::parse("idle>30h").has_duration_predicate());
-        assert!(SessionQuery::parse("idle>30d").has_duration_predicate());
+        assert!(SessionQuery::parse("time>30s").has_duration_predicate());
+        assert!(SessionQuery::parse("time>30m").has_duration_predicate());
+        assert!(SessionQuery::parse("time>30h").has_duration_predicate());
+        assert!(SessionQuery::parse("time>30d").has_duration_predicate());
     }
 
     #[test]
     fn combines_text_and_predicate() {
-        let q = SessionQuery::parse("abtop idle>1d");
+        let q = SessionQuery::parse("abtop time>1d");
         assert_eq!(q.text(), "abtop");
         assert!(q.has_duration_predicate());
         assert!(q.duration_matches(dur(2 * 86_400), dur(0)));
@@ -275,28 +268,40 @@ mod tests {
 
     #[test]
     fn multiple_predicates_and_together() {
-        // Active in last 7d AND idle more than 1h (a "warm but paused" window).
-        let q = SessionQuery::parse("active<7d idle>1h");
-        assert!(q.duration_matches(dur(2 * 3_600), dur(0))); // 2h idle
-        assert!(!q.duration_matches(dur(30), dur(0))); // 30s idle: too fresh
+        // Touched in the last 7d AND idle more than 1h ("warm but paused").
+        let q = SessionQuery::parse("time<7d time>1h");
+        assert!(q.duration_matches(dur(2 * 3_600), dur(0))); // 2h
+        assert!(!q.duration_matches(dur(30), dur(0))); // 30s: too fresh
         assert!(!q.duration_matches(dur(8 * 86_400), dur(0))); // 8d: too stale
     }
 
     #[test]
     fn invalid_predicate_falls_back_to_text() {
         // Missing unit / bad number -> treated as substring text.
-        let q = SessionQuery::parse("idle>abc");
+        let q = SessionQuery::parse("time>abc");
         assert!(!q.has_duration_predicate());
-        assert_eq!(q.text(), "idle>abc");
+        assert_eq!(q.text(), "time>abc");
 
-        let q2 = SessionQuery::parse("idle>");
+        let q2 = SessionQuery::parse("time>");
         assert!(!q2.has_duration_predicate());
-        assert_eq!(q2.text(), "idle>");
+        assert_eq!(q2.text(), "time>");
+    }
+
+    #[test]
+    fn retired_keywords_are_plain_text() {
+        // `active` / `idle` were unified into `time`; they are now substring
+        // text, not predicates.
+        let a = SessionQuery::parse("active<24h");
+        assert!(!a.has_duration_predicate());
+        assert_eq!(a.text(), "active<24h");
+        let i = SessionQuery::parse("idle>3d");
+        assert!(!i.has_duration_predicate());
+        assert_eq!(i.text(), "idle>3d");
     }
 
     #[test]
     fn case_insensitive_predicate() {
-        let q = SessionQuery::parse("IDLE>3D");
+        let q = SessionQuery::parse("TIME>3D");
         assert!(q.has_duration_predicate());
         assert!(q.duration_matches(dur(4 * 86_400), dur(0)));
     }

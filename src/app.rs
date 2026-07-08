@@ -1961,11 +1961,11 @@ mod tests {
         app.sessions = vec![fresh, stale];
 
         // Active within last 24h -> only the fresh session (index 0).
-        app.filter_text = "active<24h".into();
+        app.filter_text = "time<24h".into();
         assert_eq!(app.visible_indices(), vec![0]);
 
-        // Idle more than 3 days -> only the stale session (index 1).
-        app.filter_text = "idle>3d".into();
+        // No turn for more than 3 days -> only the stale session (index 1).
+        app.filter_text = "time>3d".into();
         assert_eq!(app.visible_indices(), vec![1]);
 
         // Session age over 2 days -> only the stale session (index 1).
@@ -1973,7 +1973,7 @@ mod tests {
         assert_eq!(app.visible_indices(), vec![1]);
 
         // Combined text + predicate: text excludes the stale codex session.
-        app.filter_text = "claude idle>3d".into();
+        app.filter_text = "somematch time>3d".into();
         assert!(app.visible_indices().is_empty());
 
         // Empty filter -> everything visible.

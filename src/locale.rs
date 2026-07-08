@@ -132,8 +132,8 @@ static LOCALE_EN: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     );
     m.insert("help.clear_filter", "clear filter / close overlay");
     m.insert("help.filters", "Filters (in / box)");
-    m.insert("help.filter_active", "active in last N (e.g. active<24h)");
-    m.insert("help.filter_idle", "idle over N / stale (e.g. idle>3d)");
+    m.insert("help.filter_time_active", "active in last N (e.g. time<24h)");
+    m.insert("help.filter_time_stale", "stale over N (e.g. time>3d)");
     m.insert("help.filter_age", "session age (e.g. age>=7d)");
     m.insert("help.filter_units", "units s/m/h/d · ops > < >= <=");
     m.insert("help.kill_session", "kill selected session");
@@ -410,10 +410,10 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     );
     m.insert("help.clear_filter", "清除过滤 / 关闭覆盖");
     m.insert("help.filters", "过滤器（在 / 输入框）");
-    m.insert("help.filter_active", "最近 N 内活跃（如 active<24h）");
-    m.insert("help.filter_idle", "空闲超过 N / 陈旧（如 idle>3d）");
+    m.insert("help.filter_time_active", "最近 N 内活跃（如 time<24h）");
+    m.insert("help.filter_time_stale", "超过 N 未活动 / 陈旧（如 time>3d）");
     m.insert("help.filter_age", "会话时长（如 age>=7d）");
-    m.insert("help.filter_units", "单位 s/m/h/d · 运算符 > < >= <= · 可与文本组合");
+    m.insert("help.filter_units", "单位 s/m/h/d · 运算符 > < >= <=");
     m.insert("help.kill_session", "终止选中的会话");
     m.insert("help.kill_orphans", "终止孤立端口");
     m.insert("help.refresh", "强制刷新");

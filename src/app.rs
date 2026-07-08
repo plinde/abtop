@@ -1037,14 +1037,18 @@ impl App {
 
     /// Returns indices of sessions matching the current filter.
     pub fn visible_indices(&self) -> Vec<usize> {
-        let mut indices: Vec<usize> = if self.filter_text.is_empty() {
+        let query = crate::filter::SessionQuery::parse(&self.filter_text);
+        let mut indices: Vec<usize> = if query.is_empty() {
             (0..self.sessions.len()).collect()
         } else {
-            let query = self.filter_text.to_lowercase();
+            let text = query.text();
             self.sessions
                 .iter()
                 .enumerate()
-                .filter(|(_, s)| Self::session_matches(s, &query))
+                .filter(|(_, s)| {
+                    query.duration_matches(s.last_turn_age(), s.elapsed())
+                        && (text.is_empty() || Self::session_matches(s, text))
+                })
                 .map(|(i, _)| i)
                 .collect()
         };
@@ -1924,6 +1928,57 @@ mod tests {
         let limits = vec![rate_limit("claude", 89.9)];
         promote_waiting_to_rate_limited(&mut sessions, &limits);
         assert_eq!(sessions[0].status, SessionStatus::Waiting);
+    }
+
+    fn now_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+    }
+
+    #[test]
+    fn duration_filter_selects_active_and_stale_sessions() {
+        let mut app = App::new_with_config(
+            Theme::default(),
+            &[],
+            crate::config::PanelVisibility::default(),
+        );
+        let now = now_ms();
+
+        // Fresh: turn 1 minute ago.
+        let mut fresh = waiting_session("claude");
+        fresh.session_id = "fresh".into();
+        fresh.started_at = now - 60 * 60 * 1000; // started 1h ago
+        fresh.last_turn_at = now - 60 * 1000; // last turn 1m ago
+
+        // Stale: turn 4 days ago.
+        let mut stale = waiting_session("codex");
+        stale.session_id = "stale".into();
+        stale.started_at = now - 5 * 86_400 * 1000; // started 5d ago
+        stale.last_turn_at = now - 4 * 86_400 * 1000; // last turn 4d ago
+
+        app.sessions = vec![fresh, stale];
+
+        // Active within last 24h -> only the fresh session (index 0).
+        app.filter_text = "active<24h".into();
+        assert_eq!(app.visible_indices(), vec![0]);
+
+        // Idle more than 3 days -> only the stale session (index 1).
+        app.filter_text = "idle>3d".into();
+        assert_eq!(app.visible_indices(), vec![1]);
+
+        // Session age over 2 days -> only the stale session (index 1).
+        app.filter_text = "age>2d".into();
+        assert_eq!(app.visible_indices(), vec![1]);
+
+        // Combined text + predicate: text excludes the stale codex session.
+        app.filter_text = "claude idle>3d".into();
+        assert!(app.visible_indices().is_empty());
+
+        // Empty filter -> everything visible.
+        app.filter_text = String::new();
+        assert_eq!(app.visible_indices().len(), 2);
     }
 
     #[test]

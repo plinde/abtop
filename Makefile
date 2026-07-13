@@ -1,7 +1,7 @@
 .PHONY: build install clean
 
 BIN := abtop
-BINDIR ?= $(HOME)/.cargo/bin
+BINDIR ?= $(HOME)/.local/bin
 TARGET := target/release/$(BIN)
 
 build:

@@ -5,7 +5,7 @@
 See every Claude Code, Codex CLI, and OpenCode session at a glance — token usage, context window %, rate limits, child processes, open ports, and more.
 Claude Code, Codex CLI, and OpenCode sessions are discovered from local process/file state, so multiple active profiles are supported across macOS, Linux, and Windows.
 
-![demo](https://raw.githubusercontent.com/graykode/abtop/main/assets/demo.gif)
+![demo](https://raw.githubusercontent.com/plinde/abtop/main/assets/demo.gif)
 
 ## Why
 
@@ -18,34 +18,30 @@ All read-only. No API keys. No auth.
 
 ## Install
 
-### macOS / Linux
+### Homebrew (macOS)
+
+```bash
+brew install plinde/tap/abtop
+```
+
+### From source
+
+```bash
+cargo build --release
+make install
+```
+
+`make install` places the executable in `~/.local/bin` by default. Override
+`BINDIR` when a different user-local location is needed.
 
 > [!IMPORTANT]
 > On Linux, ensure `sqlite3` is installed to enable monitoring for OpenCode sessions.
 
-```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/graykode/abtop/releases/latest/download/abtop-installer.sh | sh
-```
+### Manual releases
 
-### Cargo
-
-```bash
-cargo install abtop
-```
-
-### Windows
-
-Native support — no WSL required. Uses `sysinfo` for process info and host CPU/MEM metrics, and `netstat -ano` for listening ports. Windows has no load average, so LOAD is reported as 0. OpenCode session discovery additionally requires the `sqlite3` CLI (`winget install SQLite.SQLite`); without it abtop prints a one-time warning to stderr.
-
-```powershell
-powershell -c "irm https://github.com/graykode/abtop/releases/latest/download/abtop-installer.ps1 | iex"
-```
-
-Or `cargo install abtop` from any terminal with Git in PATH. Claude Code config is resolved automatically from `%USERPROFILE%\.claude`.
-
-### Other
-
-Pre-built binaries for all platforms are available on the [GitHub Releases](https://github.com/graykode/abtop/releases) page.
+This fork releases manually. Download published assets from the
+[plinde/abtop releases page](https://github.com/plinde/abtop/releases), or
+build from source. It is not published to crates.io and does not self-update.
 
 ## Usage
 
@@ -95,27 +91,27 @@ OpenCode support reads the local SQLite database at `~/.local/share/opencode/ope
 
 | btop (default) | dracula | catppuccin |
 |:-:|:-:|:-:|
-| ![btop](https://raw.githubusercontent.com/graykode/abtop/main/assets/themes/btop.png) | ![dracula](https://raw.githubusercontent.com/graykode/abtop/main/assets/themes/dracula.png) | ![catppuccin](https://raw.githubusercontent.com/graykode/abtop/main/assets/themes/catppuccin.png) |
+| ![btop](https://raw.githubusercontent.com/plinde/abtop/main/assets/themes/btop.png) | ![dracula](https://raw.githubusercontent.com/plinde/abtop/main/assets/themes/dracula.png) | ![catppuccin](https://raw.githubusercontent.com/plinde/abtop/main/assets/themes/catppuccin.png) |
 
 | tokyo-night | gruvbox | nord |
 |:-:|:-:|:-:|
-| ![tokyo-night](https://raw.githubusercontent.com/graykode/abtop/main/assets/themes/tokyo-night.png) | ![gruvbox](https://raw.githubusercontent.com/graykode/abtop/main/assets/themes/gruvbox.png) | ![nord](https://raw.githubusercontent.com/graykode/abtop/main/assets/themes/nord.png) |
+| ![tokyo-night](https://raw.githubusercontent.com/plinde/abtop/main/assets/themes/tokyo-night.png) | ![gruvbox](https://raw.githubusercontent.com/plinde/abtop/main/assets/themes/gruvbox.png) | ![nord](https://raw.githubusercontent.com/plinde/abtop/main/assets/themes/nord.png) |
 
 Colorblind-friendly themes:
 
 | high-contrast | protanopia |
 |:-:|:-:|
-| ![high-contrast](https://raw.githubusercontent.com/graykode/abtop/main/assets/themes/high-contrast.png) | ![protanopia](https://raw.githubusercontent.com/graykode/abtop/main/assets/themes/protanopia.png) |
+| ![high-contrast](https://raw.githubusercontent.com/plinde/abtop/main/assets/themes/high-contrast.png) | ![protanopia](https://raw.githubusercontent.com/plinde/abtop/main/assets/themes/protanopia.png) |
 
 | deuteranopia | tritanopia |
 |:-:|:-:|
-| ![deuteranopia](https://raw.githubusercontent.com/graykode/abtop/main/assets/themes/deuteranopia.png) | ![tritanopia](https://raw.githubusercontent.com/graykode/abtop/main/assets/themes/tritanopia.png) |
+| ![deuteranopia](https://raw.githubusercontent.com/plinde/abtop/main/assets/themes/deuteranopia.png) | ![tritanopia](https://raw.githubusercontent.com/plinde/abtop/main/assets/themes/tritanopia.png) |
 
 Light themes (`light` — Solarized cream, `white` — GitHub-style pure white) for bright terminals:
 
 | light | white |
 |:-:|:-:|
-| ![light](https://raw.githubusercontent.com/graykode/abtop/main/assets/themes/light.png) | ![white](https://raw.githubusercontent.com/graykode/abtop/main/assets/themes/white.png) |
+| ![light](https://raw.githubusercontent.com/plinde/abtop/main/assets/themes/light.png) | ![white](https://raw.githubusercontent.com/plinde/abtop/main/assets/themes/white.png) |
 
 ## Configuration
 
@@ -132,6 +128,9 @@ hidden_agents = ["codex"]
 claude_config_dirs = ["~/.claude-personal", "~/.claude-work-team"]
 # UI language. Omit or leave empty to auto-detect from LANG.
 language = "zh"
+# Show the selected session's lower detail/chat pane. Defaults to false, so
+# the sessions list uses the full panel height. Toggle at runtime with v then s.
+show_session_details = false
 # Ordered session overview columns. Unknown names are ignored; when omitted,
 # abtop uses its default set and shows as many as the terminal width allows.
 session_columns = [

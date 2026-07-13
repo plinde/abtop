@@ -320,6 +320,8 @@ pub struct App {
     pub show_projects: bool,
     pub show_ports: bool,
     pub show_sessions: bool,
+    /// Whether the selected-session detail pane is visible below the list.
+    pub show_session_details: bool,
     pub show_mcp: bool,
     pub narrow_tab: NarrowTab,
     pub active_narrow_section: Option<NarrowSection>,
@@ -460,6 +462,7 @@ impl App {
             show_projects: panels.projects,
             show_ports: panels.ports,
             show_sessions: panels.sessions,
+            show_session_details: panels.session_details,
             show_mcp: panels.mcp,
             narrow_tab: NarrowTab::Work,
             active_narrow_section: Some(NarrowSection::Sessions),
@@ -539,6 +542,7 @@ impl App {
             projects: self.show_projects,
             ports: self.show_ports,
             sessions: self.show_sessions,
+            session_details: self.show_session_details,
             mcp: self.show_mcp,
         };
         if let Err(e) = crate::config::save_panel_visibility(&panels) {
@@ -558,7 +562,7 @@ impl App {
     }
 
     pub fn config_item_count(&self) -> usize {
-        8 + SessionSortColumn::ALL.len() // theme + 7 panel toggles + session columns
+        9 + SessionSortColumn::ALL.len() // theme + 7 panel toggles + session details + columns
     }
 
     pub fn config_select_next(&mut self) {
@@ -583,9 +587,10 @@ impl App {
             4 => self.show_projects = !self.show_projects,
             5 => self.show_ports = !self.show_ports,
             6 => self.show_sessions = !self.show_sessions,
-            7 => self.show_mcp = !self.show_mcp,
+            7 => self.show_session_details = !self.show_session_details,
+            8 => self.show_mcp = !self.show_mcp,
             idx => {
-                let column_idx = idx.saturating_sub(8);
+                let column_idx = idx.saturating_sub(9);
                 let Some(&column) = SessionSortColumn::ALL.get(column_idx) else {
                     return;
                 };
@@ -666,6 +671,7 @@ impl App {
         self.show_projects = panels.projects;
         self.show_ports = panels.ports;
         self.show_sessions = panels.sessions;
+        self.show_session_details = panels.session_details;
         self.show_mcp = panels.mcp;
         self.session_columns = SessionSortColumn::DEFAULT_COLUMNS.to_vec();
         self.session_sort = None;
@@ -869,6 +875,11 @@ impl App {
     pub fn toggle_timeline(&mut self) {
         self.show_timeline = !self.show_timeline;
         self.timeline_scroll = 0;
+    }
+
+    pub fn toggle_session_details(&mut self) {
+        self.show_session_details = !self.show_session_details;
+        self.persist_panel_visibility();
     }
 
     pub fn cycle_theme(&mut self) {
@@ -2264,6 +2275,7 @@ mod tests {
                 projects: false,
                 ports: false,
                 sessions: true,
+                session_details: false,
                 mcp: false,
             },
             &[],
@@ -2289,6 +2301,7 @@ mod tests {
         assert!(app.show_projects);
         assert!(app.show_ports);
         assert!(app.show_sessions);
+        assert!(!app.show_session_details);
         assert!(app.show_mcp);
         assert!(app.filter_text.is_empty());
         assert!(!app.filter_active);

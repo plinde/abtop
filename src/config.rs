@@ -10,6 +10,8 @@ pub struct PanelVisibility {
     pub projects: bool,
     pub ports: bool,
     pub sessions: bool,
+    /// Whether the selected-session detail pane is shown below the session list.
+    pub session_details: bool,
     pub mcp: bool,
 }
 
@@ -22,6 +24,7 @@ impl Default for PanelVisibility {
             projects: true,
             ports: true,
             sessions: true,
+            session_details: false,
             mcp: true,
         }
     }
@@ -123,6 +126,9 @@ fn parse_config_body(content: &str) -> AppConfig {
                 "show_projects" => config.panels.projects = parse_bool(val).unwrap_or(true),
                 "show_ports" => config.panels.ports = parse_bool(val).unwrap_or(true),
                 "show_sessions" => config.panels.sessions = parse_bool(val).unwrap_or(true),
+                "show_session_details" => {
+                    config.panels.session_details = parse_bool(val).unwrap_or(false)
+                }
                 "show_mcp" => config.panels.mcp = parse_bool(val).unwrap_or(true),
                 "lock_theme" => config.lock_theme = parse_bool(val).unwrap_or(false),
                 _ => {}
@@ -187,6 +193,7 @@ pub fn save_panel_visibility(panels: &PanelVisibility) -> Result<(), String> {
         ("show_projects", panels.projects.to_string()),
         ("show_ports", panels.ports.to_string()),
         ("show_sessions", panels.sessions.to_string()),
+        ("show_session_details", panels.session_details.to_string()),
         ("show_mcp", panels.mcp.to_string()),
     ])
 }
@@ -321,6 +328,19 @@ mod tests {
         let cfg = parse_config_body(r#"session_sort = ["status:asc", "recent:desc"]"#);
 
         assert_eq!(cfg.session_sort, vec!["status:asc", "recent:desc"]);
+    }
+
+    #[test]
+    fn parse_config_body_loads_session_detail_visibility() {
+        let cfg = parse_config_body("show_session_details = false\n");
+
+        assert!(!cfg.panels.session_details);
+    }
+
+    #[test]
+    fn session_details_are_hidden_by_default() {
+        assert!(!PanelVisibility::default().session_details);
+        assert!(!parse_config_body("").panels.session_details);
     }
 
     #[test]

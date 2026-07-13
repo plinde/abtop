@@ -285,6 +285,7 @@ fn run_app(
                             KeyCode::Char('T') if !app.lock_theme => app.tree_view = !app.tree_view,
                             KeyCode::Char('l') => app.toggle_timeline(),
                             KeyCode::Char('f') => app.toggle_file_audit(),
+                            KeyCode::Char('s') => app.toggle_session_details(),
                             KeyCode::Char(c @ '1'..='7') => app.toggle_panel(c as u8 - b'0'),
                             KeyCode::Char('M') => app.toggle_mcp_session_suppression(),
                             KeyCode::Char('t') if !app.lock_theme => app.cycle_theme(),

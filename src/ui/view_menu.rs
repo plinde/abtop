@@ -41,6 +41,11 @@ pub(crate) fn items(app: &App) -> Vec<ViewItem> {
             state: bool_state(app.show_file_audit),
         },
         ViewItem {
+            key: 's',
+            label: t("view.session_details").leak(),
+            state: bool_state(app.show_session_details),
+        },
+        ViewItem {
             key: '1',
             label: t("view.context_panel").leak(),
             state: bool_state(app.show_context),

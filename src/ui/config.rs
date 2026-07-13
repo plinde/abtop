@@ -72,6 +72,10 @@ pub(crate) fn draw_config_overlay(f: &mut Frame, app: &App, theme: &Theme) {
             toggle_str(&on_str, &off_str, app.show_sessions),
         ),
         (
+            t("config.session_details"),
+            toggle_str(&on_str, &off_str, app.show_session_details),
+        ),
+        (
             t("config.mcp_panel"),
             toggle_str(&on_str, &off_str, app.show_mcp),
         ),

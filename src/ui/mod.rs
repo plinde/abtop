@@ -965,7 +965,9 @@ fn session_at(app: &App, area: Rect, row: u16) -> Option<usize> {
             }
         })
         .sum();
-    let detail_reserve: u16 = if app.show_timeline {
+    let detail_reserve: u16 = if !app.show_session_details {
+        0
+    } else if app.show_timeline {
         (inner_h * 2 / 3).min(inner_h.saturating_sub(5))
     } else if inner_h <= 12 {
         6.min(inner_h.saturating_sub(3))
@@ -1126,7 +1128,7 @@ mod tests {
     }
 
     #[test]
-    fn compact_sizes_render_sessions_instead_of_too_small() {
+    fn compact_sizes_prioritize_the_session_list() {
         for (w, h) in [(69, 27), (80, 24)] {
             let text = render_demo(w, h);
             assert!(text.contains("Work"), "{w}x{h} should render tabs\n{text}");
@@ -1151,8 +1153,8 @@ mod tests {
                 "{w}x{h} should pair sessions with projects\n{text}"
             );
             assert!(
-                text.contains("SESSION"),
-                "{w}x{h} should render selected-session detail\n{text}"
+                !text.contains("CHAT"),
+                "{w}x{h} should keep selected-session details hidden by default\n{text}"
             );
             assert!(
                 !text.contains("Terminal size too small"),
@@ -1479,9 +1481,10 @@ mod tests {
     }
 
     #[test]
-    fn desktop_default_detail_shows_chat_instead_of_timeline() {
+    fn desktop_session_details_show_chat_instead_of_timeline() {
         let mut app = App::new_with_config(Theme::default(), &[], PanelVisibility::default());
         crate::demo::populate_demo(&mut app);
+        app.show_session_details = true;
         app.sessions[app.selected].children.clear();
         app.sessions[app.selected].subagents.clear();
 
@@ -1501,6 +1504,25 @@ mod tests {
         assert!(
             !text.contains("TIMELINE"),
             "timeline should be opt-in via l toggle\n{text}"
+        );
+    }
+
+    #[test]
+    fn session_details_toggle_keeps_only_the_session_list() {
+        let mut app = App::new_with_config(Theme::default(), &[], PanelVisibility::default());
+        crate::demo::populate_demo(&mut app);
+        app.sessions[app.selected].children.clear();
+        app.sessions[app.selected].subagents.clear();
+
+        let backend = TestBackend::new(160, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| draw(f, &app)).unwrap();
+        let text = format!("{}", terminal.backend());
+
+        assert!(text.contains("sessions"), "session list should remain visible\n{text}");
+        assert!(
+            !text.contains("webhook signatures"),
+            "selected-session chat detail should be hidden\n{text}"
         );
     }
 

@@ -40,7 +40,9 @@ pub(crate) fn draw_sessions_panel_active(
             }
         })
         .sum();
-    let detail_reserve: u16 = if app.show_timeline {
+    let detail_reserve: u16 = if !app.show_session_details {
+        0
+    } else if app.show_timeline {
         (inner.height * 2 / 3).min(inner.height.saturating_sub(5))
     } else if inner.height <= 12 {
         6.min(inner.height.saturating_sub(3))
@@ -52,15 +54,19 @@ pub(crate) fn draw_sessions_panel_active(
 
     let panel_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(table_h),
-            Constraint::Length(1), // separator line
-            Constraint::Min(0),
-        ])
+        .constraints(if app.show_session_details {
+            vec![
+                Constraint::Length(table_h),
+                Constraint::Length(1), // separator line
+                Constraint::Min(0),
+            ]
+        } else {
+            vec![Constraint::Min(0)]
+        })
         .split(inner);
 
     // Draw separator line between session list and detail
-    {
+    if app.show_session_details {
         let sep_area = panel_chunks[1];
         let sep_line = "─".repeat(sep_area.width as usize);
         f.render_widget(
@@ -285,6 +291,9 @@ pub(crate) fn draw_sessions_panel_active(
     }
 
     // ── Detail section for selected session (full-width Paragraph, not Table) ──
+    if !app.show_session_details {
+        return;
+    }
     if let Some(session) = app.sessions.get(app.selected) {
         let detail_area = panel_chunks[2];
         if detail_area.height < 3 {

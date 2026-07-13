@@ -148,6 +148,7 @@ static LOCALE_EN: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("help.cycle_theme", "cycle theme / toggle tree");
     m.insert("help.toggle_timeline", "toggle timeline");
     m.insert("help.toggle_file_audit", "toggle file audit");
+    m.insert("help.toggle_session_details", "toggle selected-session details");
     m.insert(
         "help.toggle_panels",
         "toggle panels (context/quota/tokens/projects/ports/sessions/mcp)",
@@ -187,6 +188,7 @@ static LOCALE_EN: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("view.tree_view", "tree view");
     m.insert("view.timeline", "timeline");
     m.insert("view.file_audit", "file audit");
+    m.insert("view.session_details", "session details");
     m.insert("view.context_panel", "context panel");
     m.insert("view.quota_panel", "quota panel");
     m.insert("view.tokens_panel", "tokens panel");
@@ -268,6 +270,7 @@ static LOCALE_EN: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("config.projects_panel", "Projects panel (4)");
     m.insert("config.ports_panel", "Ports panel (5)");
     m.insert("config.sessions_panel", "Sessions panel (6)");
+    m.insert("config.session_details", "Session details (v → s)");
     m.insert("config.mcp_panel", "MCP servers (7)");
     m.insert("config.column", "Column");
 
@@ -426,6 +429,7 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("help.cycle_theme", "切换主题 / 切换树视图");
     m.insert("help.toggle_timeline", "切换时间线");
     m.insert("help.toggle_file_audit", "切换文件审计");
+    m.insert("help.toggle_session_details", "切换选中会话详情");
     m.insert(
         "help.toggle_panels",
         "切换面板 (上下文/配额/词元/项目/端口/会话/MCP)",
@@ -462,6 +466,7 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("view.tree_view", "树视图");
     m.insert("view.timeline", "时间线");
     m.insert("view.file_audit", "文件审计");
+    m.insert("view.session_details", "会话详情");
     m.insert("view.context_panel", "上下文面板");
     m.insert("view.quota_panel", "配额面板");
     m.insert("view.tokens_panel", "词元面板");
@@ -543,6 +548,7 @@ static LOCALE_ZH: LazyLock<std::collections::HashMap<&str, &str>> = LazyLock::ne
     m.insert("config.projects_panel", "项目面板 (4)");
     m.insert("config.ports_panel", "端口面板 (5)");
     m.insert("config.sessions_panel", "会话面板 (6)");
+    m.insert("config.session_details", "会话详情 (v → s)");
     m.insert("config.mcp_panel", "MCP 服务器 (7)");
     m.insert("config.column", "Column");
 

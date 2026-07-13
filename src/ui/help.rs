@@ -35,6 +35,7 @@ fn get_entries() -> Vec<(String, String)> {
         ("  T   tree view (or t when theme locked)".to_string(), String::new()),
         ("  l".to_string(), t("help.toggle_timeline")),
         ("  f".to_string(), t("help.toggle_file_audit")),
+        ("  v → s".to_string(), t("help.toggle_session_details")),
         ("  1-7".to_string(), t("help.toggle_panels")),
         ("  M".to_string(), t("help.mcp_suppress")),
         (t("help.help"), String::new()),

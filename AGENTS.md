@@ -171,6 +171,8 @@ Rate limits extracted from `token_count` events:
 ### 4. OpenCode sessions: `~/.local/share/opencode/opencode.db`
 - Discover running `opencode` processes via shared `ps` data.
 - Read recent sessions from OpenCode's SQLite DB through `sqlite3 -readonly -json`.
+- Schema: V1 (1.x) uses `session` + `message` (`$.role`, `$.modelID`). V2 (2.x) uses `session_v2` + `session_message` (`type` column, `$.model.{id,providerID}`); the V1 tables remain, frozen, and migrated V1 sessions are copied into `session_v2`. When `session_v2` exists, read it and add V1 rows only for ids not in `session_v2`.
+- V2 runs one shared backend `opencode serve --service` (cwd `$HOME`) for all clients; it is excluded from PID matching.
 - Match live PIDs to DB sessions by process cwd. OpenCode does not expose a PID/session mapping, so when multiple DB rows share one cwd, only live PIDs should be assigned and older rows should not be shown as live duplicates.
 - OpenCode contributes session/token/project/port data, but not quota data. Quota remains Claude + Codex only.
 

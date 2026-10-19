@@ -245,7 +245,9 @@ impl OpenCodeCollector {
         process_info
             .iter()
             .filter(|(_, info)| {
-                process::cmd_has_binary(&info.command, "opencode") && !info.command.contains("grep")
+                process::cmd_has_binary(&info.command, "opencode")
+                    && !info.command.contains("grep")
+                    && !is_shared_service(&info.command)
             })
             .map(|(pid, _)| *pid)
             .collect()
@@ -317,67 +319,22 @@ impl OpenCodeCollector {
         serde_json::from_str(stdout.trim()).ok()
     }
 
+    /// Whether the DB has the OpenCode V2 tables (`session_v2` +
+    /// `session_message`). V1 hosts only have `session`/`message`/`part`.
+    fn has_v2_tables(&self) -> bool {
+        self.run_query(V2_DETECT_SQL)
+            .and_then(|rows| rows.first().and_then(|r| r["n"].as_u64()))
+            .is_some_and(|n| n == 2)
+    }
+
     fn query_sessions(&self) -> Option<Vec<DbSession>> {
-        let session_sql = format!(
-            r#"
-SELECT
-  s.id, s.title, s.directory, s.version, s.time_created, s.time_updated,
-  COALESCE(p.name, '') as project_name,
-  COUNT(m.id) as turn_count,
-  COALESCE(SUM(json_extract(m.data, '$.tokens.input')), 0) as total_input,
-  COALESCE(SUM(json_extract(m.data, '$.tokens.output')), 0) as total_output,
-  COALESCE(SUM(json_extract(m.data, '$.tokens.cache.read')), 0) as total_cache_read,
-  COALESCE(SUM(json_extract(m.data, '$.tokens.cache.write')), 0) as total_cache_write
-FROM session s
-LEFT JOIN project p ON s.project_id = p.id
-LEFT JOIN message m ON m.session_id = s.id
-  AND json_extract(m.data, '$.role') = 'assistant'
-GROUP BY s.id
-ORDER BY s.time_updated DESC
-LIMIT {};"#,
-            MAX_SESSIONS
-        );
-
-        let model_sql = format!(
-            r#"
-SELECT
-  s.id,
-  COALESCE((SELECT json_extract(m2.data, '$.modelID')
-    FROM message m2 WHERE m2.session_id = s.id
-    AND json_extract(m2.data, '$.role') = 'assistant'
-    ORDER BY m2.time_created DESC LIMIT 1), '') as model,
-  COALESCE((SELECT json_extract(m2.data, '$.providerID')
-    FROM message m2 WHERE m2.session_id = s.id
-    AND json_extract(m2.data, '$.role') = 'assistant'
-    ORDER BY m2.time_created DESC LIMIT 1), '') as provider
-FROM session s
-ORDER BY s.time_updated DESC
-LIMIT {};"#,
-            MAX_SESSIONS
-        );
-
-        // Two separate invocations to avoid fragile concatenated JSON parsing
-        let rows = self.run_query(&session_sql)?;
-        let model_rows = self.run_query(&model_sql).unwrap_or_default();
-
-        // Build model lookup by session id
-        let mut model_map: HashMap<String, (String, String)> = HashMap::new();
-        for mr in &model_rows {
-            if let Some(id) = mr["id"].as_str() {
-                model_map.insert(
-                    id.to_string(),
-                    (
-                        sanitize_db_field(mr["model"].as_str().unwrap_or(""), 256),
-                        sanitize_db_field(mr["provider"].as_str().unwrap_or(""), 256),
-                    ),
-                );
-            }
-        }
+        let rows = self.run_query(&session_sql(self.has_v2_tables()))?;
 
         let mut sessions = Vec::new();
         for row in rows {
             let id = row["id"].as_str().unwrap_or("").to_string();
-            let (model, provider) = model_map.remove(&id).unwrap_or_default();
+            let model = sanitize_db_field(row["model"].as_str().unwrap_or(""), 256);
+            let provider = sanitize_db_field(row["provider"].as_str().unwrap_or(""), 256);
 
             // Sanitize DB-sourced strings before they reach the TUI/JSON snapshot.
             let title = sanitize_db_title(row["title"].as_str().unwrap_or(""));
@@ -408,6 +365,77 @@ LIMIT {};"#,
     }
 }
 
+const V2_DETECT_SQL: &str = "SELECT COUNT(*) AS n FROM sqlite_master \
+     WHERE type = 'table' AND name IN ('session_v2', 'session_message');";
+
+/// Build the session query.
+///
+/// OpenCode V1 stores sessions in `session` and messages in `message`
+/// (`$.role`, `$.modelID`, `$.providerID`). OpenCode V2 (2.x) stores them in
+/// `session_v2` and `session_message` (`type` column, `$.model.id`,
+/// `$.model.providerID`); token paths (`$.tokens.*`) are the same in both.
+/// A V2 host keeps the frozen V1 tables and copies V1 sessions into
+/// `session_v2`, so when V2 tables exist V1 rows are only included for
+/// session ids absent from `session_v2` (no double counting).
+///
+/// Only the newest `MAX_SESSIONS` sessions are aggregated.
+fn session_sql(has_v2: bool) -> String {
+    let v1_recent = "SELECT id, title, directory, version, time_created, time_updated, \
+         project_id, NULL AS model_json, 'v1' AS src FROM session";
+    let v1_msgs = "SELECT m.session_id AS sid, m.time_created AS tc, m.data AS data \
+         FROM message m JOIN recent r ON r.id = m.session_id AND r.src = 'v1' \
+         WHERE json_extract(m.data, '$.role') = 'assistant'";
+    let (recent, msgs) = if has_v2 {
+        (
+            format!(
+                "SELECT id, title, directory, version, time_created, time_updated, \
+                 project_id, model AS model_json, 'v2' AS src FROM session_v2 \
+                 UNION ALL {v1_recent} WHERE id NOT IN (SELECT id FROM session_v2)"
+            ),
+            format!(
+                "SELECT m.session_id AS sid, m.time_created AS tc, m.data AS data \
+                 FROM session_message m JOIN recent r ON r.id = m.session_id AND r.src = 'v2' \
+                 WHERE m.type = 'assistant' \
+                 UNION ALL {v1_msgs}"
+            ),
+        )
+    } else {
+        (v1_recent.to_string(), v1_msgs.to_string())
+    };
+    format!(
+        r#"
+WITH recent AS (
+  {recent}
+  ORDER BY time_updated DESC
+  LIMIT {MAX_SESSIONS}
+),
+msgs AS MATERIALIZED (
+  {msgs}
+)
+SELECT
+  r.id, r.title, r.directory, r.version, r.time_created, r.time_updated,
+  COALESCE(p.name, '') AS project_name,
+  (SELECT COUNT(*) FROM msgs x WHERE x.sid = r.id) AS turn_count,
+  (SELECT COALESCE(SUM(json_extract(x.data, '$.tokens.input')), 0) FROM msgs x WHERE x.sid = r.id) AS total_input,
+  (SELECT COALESCE(SUM(json_extract(x.data, '$.tokens.output')), 0) FROM msgs x WHERE x.sid = r.id) AS total_output,
+  (SELECT COALESCE(SUM(json_extract(x.data, '$.tokens.cache.read')), 0) FROM msgs x WHERE x.sid = r.id) AS total_cache_read,
+  (SELECT COALESCE(SUM(json_extract(x.data, '$.tokens.cache.write')), 0) FROM msgs x WHERE x.sid = r.id) AS total_cache_write,
+  COALESCE(
+    (SELECT COALESCE(json_extract(x.data, '$.model.id'), json_extract(x.data, '$.modelID'))
+       FROM msgs x WHERE x.sid = r.id ORDER BY x.tc DESC LIMIT 1),
+    json_extract(r.model_json, '$.id'),
+    '') AS model,
+  COALESCE(
+    (SELECT COALESCE(json_extract(x.data, '$.model.providerID'), json_extract(x.data, '$.providerID'))
+       FROM msgs x WHERE x.sid = r.id ORDER BY x.tc DESC LIMIT 1),
+    json_extract(r.model_json, '$.providerID'),
+    '') AS provider
+FROM recent r
+LEFT JOIN project p ON r.project_id = p.id
+ORDER BY r.time_updated DESC;"#
+    )
+}
+
 impl Default for OpenCodeCollector {
     fn default() -> Self {
         Self::new()
@@ -435,6 +463,14 @@ struct DbSession {
     total_cache_write: u64,
     model: String,
     provider: String,
+}
+
+/// OpenCode V2 runs one shared background server (`opencode serve --service`)
+/// for all clients. It owns no single session and its cwd is usually `$HOME`,
+/// so it must not be matched to a session; the TUI/`run` clients are.
+fn is_shared_service(command: &str) -> bool {
+    let has = |arg: &str| command.split_whitespace().any(|a| a == arg);
+    has("serve") && has("--service")
 }
 
 /// Check if a path is a symlink (fail-closed: returns true on error).
@@ -693,5 +729,226 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn shared_service_process_is_not_a_session_pid() {
+        assert!(is_shared_service(
+            "/opt/homebrew/Cellar/opencode-v2/2.0.32/bin/opencode serve --service"
+        ));
+        assert!(!is_shared_service("opencode serve --port 4096"));
+        assert!(!is_shared_service("opencode run hello"));
+        let mut info = HashMap::new();
+        info.insert(
+            1,
+            process::ProcInfo {
+                pid: 1,
+                ppid: 0,
+                rss_kb: 1,
+                cpu_pct: 0.0,
+                command: "/usr/local/bin/opencode serve --service".to_string(),
+            },
+        );
+        assert!(OpenCodeCollector::find_opencode_pids(&info).is_empty());
+    }
+
+    // ---- fixture DB tests (need the sqlite3 CLI, as the collector does) ----
+
+    const V1_SCHEMA: &str = "
+CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT, name TEXT);
+CREATE TABLE session (id TEXT PRIMARY KEY, project_id TEXT, title TEXT, directory TEXT,
+  version TEXT, time_created INTEGER, time_updated INTEGER);
+CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER,
+  time_updated INTEGER, data TEXT);
+CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, data TEXT);
+";
+
+    const V2_SCHEMA: &str = "
+CREATE TABLE session_v2 (id TEXT PRIMARY KEY, project_id TEXT, slug TEXT, directory TEXT,
+  title TEXT, version TEXT, tokens_input INTEGER DEFAULT 0, model TEXT,
+  time_created INTEGER, time_updated INTEGER);
+CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER,
+  time_created INTEGER, time_updated INTEGER, data TEXT);
+";
+
+    fn v1_session(id: &str, updated: u64) -> String {
+        format!(
+            "INSERT INTO session VALUES ('{id}','p1','t {id}','/w/{id}','1.14.0',{updated},{updated});"
+        )
+    }
+
+    fn v1_assistant(mid: &str, sid: &str, tc: u64, input: u64, model: &str) -> String {
+        format!(
+            "INSERT INTO message VALUES ('{mid}','{sid}',{tc},{tc},'{{\"role\":\"assistant\",\
+             \"modelID\":\"{model}\",\"providerID\":\"v1prov\",\"tokens\":{{\"input\":{input},\
+             \"output\":1,\"cache\":{{\"read\":2,\"write\":3}}}}}}');"
+        )
+    }
+
+    fn v1_user(mid: &str, sid: &str, tc: u64) -> String {
+        format!(
+            "INSERT INTO message VALUES ('{mid}','{sid}',{tc},{tc},'{{\"role\":\"user\",\
+             \"tokens\":{{\"input\":999999}}}}');"
+        )
+    }
+
+    fn v2_session(id: &str, updated: u64) -> String {
+        format!(
+            "INSERT INTO session_v2 VALUES ('{id}','p1','s','/w/{id}','t {id}','2.0.32',0,\
+             '{{\"id\":\"fallback-model\",\"providerID\":\"fallback-prov\"}}',{updated},{updated});"
+        )
+    }
+
+    fn v2_msg(
+        mid: &str,
+        sid: &str,
+        ty: &str,
+        seq: u64,
+        tc: u64,
+        input: u64,
+        model: &str,
+    ) -> String {
+        format!(
+            "INSERT INTO session_message VALUES ('{mid}','{sid}','{ty}',{seq},{tc},{tc},\
+             '{{\"agent\":\"build\",\"model\":{{\"id\":\"{model}\",\"providerID\":\"v2prov\"}},\
+             \"content\":[],\"tokens\":{{\"input\":{input},\"output\":10,\"reasoning\":0,\
+             \"cache\":{{\"read\":20,\"write\":30}}}}}}');"
+        )
+    }
+
+    /// Build a fixture DB, or `None` when the sqlite3 CLI is unavailable.
+    fn fixture(sql: &str) -> Option<(tempfile::TempDir, OpenCodeCollector)> {
+        use std::io::Write;
+        use std::process::Stdio;
+        let dir = tempfile::tempdir().ok()?;
+        let db = dir.path().join("opencode.db");
+        let mut child = Command::new("sqlite3")
+            .arg(&db)
+            .stdin(Stdio::piped())
+            .spawn()
+            .ok()?;
+        child.stdin.take()?.write_all(sql.as_bytes()).ok()?;
+        assert!(child.wait().ok()?.success(), "fixture SQL failed");
+        let mut c = OpenCodeCollector::new();
+        c.db_path = db;
+        Some((dir, c))
+    }
+
+    fn by_id(rows: Vec<DbSession>) -> HashMap<String, DbSession> {
+        rows.into_iter().map(|r| (r.id.clone(), r)).collect()
+    }
+
+    #[test]
+    fn query_v1_only_db() {
+        let sql = [
+            V1_SCHEMA.to_string(),
+            "INSERT INTO project VALUES ('p1','/w','proj');".into(),
+            v1_session("a", 2000),
+            v1_assistant("m1", "a", 100, 5, "old-model"),
+            v1_assistant("m2", "a", 200, 7, "new-model"),
+            v1_user("m3", "a", 150),
+            v1_session("b", 1000),
+        ]
+        .join("\n");
+        let Some((_d, c)) = fixture(&sql) else { return };
+        assert!(!c.has_v2_tables());
+        let rows = c.query_sessions().expect("query");
+        assert_eq!(
+            rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            ["a", "b"]
+        );
+        let m = by_id(rows);
+        let a = &m["a"];
+        assert_eq!(a.turn_count, 2);
+        assert_eq!(a.total_input, 12);
+        assert_eq!(a.total_output, 2);
+        assert_eq!(a.total_cache_read, 4);
+        assert_eq!(a.total_cache_write, 6);
+        assert_eq!(a.model, "new-model");
+        assert_eq!(a.provider, "v1prov");
+        assert_eq!(a.project_name, "proj");
+        assert_eq!(m["b"].turn_count, 0);
+        assert_eq!(m["b"].model, "");
+    }
+
+    #[test]
+    fn query_v2_only_db() {
+        let sql = [
+            V1_SCHEMA.to_string(),
+            V2_SCHEMA.to_string(),
+            "INSERT INTO project VALUES ('p1','/w','proj');".into(),
+            v2_session("c", 3000),
+            v2_msg("x1", "c", "user", 1, 100, 999999, "ignored"),
+            v2_msg("x2", "c", "assistant", 2, 200, 40, "m-old"),
+            v2_msg("x3", "c", "assistant", 3, 300, 2, "m-new"),
+            v2_msg("x4", "c", "compaction", 4, 400, 999999, "ignored"),
+            v2_session("d", 2000),
+        ]
+        .join("\n");
+        let Some((_d, c)) = fixture(&sql) else { return };
+        assert!(c.has_v2_tables());
+        let m = by_id(c.query_sessions().expect("query"));
+        assert_eq!(m.len(), 2);
+        let s = &m["c"];
+        assert_eq!(s.turn_count, 2);
+        assert_eq!(s.total_input, 42);
+        assert_eq!(s.total_output, 20);
+        assert_eq!(s.total_cache_read, 40);
+        assert_eq!(s.total_cache_write, 60);
+        assert_eq!(s.model, "m-new");
+        assert_eq!(s.provider, "v2prov");
+        assert_eq!(s.version, "2.0.32");
+        // No assistant messages yet: fall back to session_v2.model.
+        assert_eq!(m["d"].model, "fallback-model");
+        assert_eq!(m["d"].provider, "fallback-prov");
+    }
+
+    #[test]
+    fn query_mixed_db_does_not_double_count_migrated_sessions() {
+        let sql = [
+            V1_SCHEMA.to_string(),
+            V2_SCHEMA.to_string(),
+            "INSERT INTO project VALUES ('p1','/w','proj');".into(),
+            // "dup" exists in both V1 and V2 (migrated copy): V2 wins.
+            v1_session("dup", 1500),
+            v1_assistant("m1", "dup", 100, 1000, "v1-model"),
+            v2_session("dup", 1500),
+            v2_msg("y1", "dup", "assistant", 1, 100, 5, "v2-model"),
+            // V1-only session (not copied into session_v2).
+            v1_session("old", 1000),
+            v1_assistant("m2", "old", 100, 7, "v1-model"),
+            // V2-native session.
+            v2_session("new", 3000),
+            v2_msg("y2", "new", "assistant", 1, 100, 9, "v2-model"),
+        ]
+        .join("\n");
+        let Some((_d, c)) = fixture(&sql) else { return };
+        let rows = c.query_sessions().expect("query");
+        assert_eq!(
+            rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            ["new", "dup", "old"]
+        );
+        let m = by_id(rows);
+        assert_eq!(m["dup"].total_input, 5);
+        assert_eq!(m["dup"].turn_count, 1);
+        assert_eq!(m["dup"].model, "v2-model");
+        assert_eq!(m["old"].total_input, 7);
+        assert_eq!(m["old"].model, "v1-model");
+        assert_eq!(m["new"].total_input, 9);
+    }
+
+    #[test]
+    fn query_limits_to_newest_sessions_across_versions() {
+        let mut stmts = vec![V1_SCHEMA.to_string(), V2_SCHEMA.to_string()];
+        for i in 0..MAX_SESSIONS as u64 {
+            stmts.push(v1_session(&format!("v1_{i}"), 1000 + i));
+            stmts.push(v2_session(&format!("v2_{i}"), 5000 + i));
+        }
+        let Some((_d, c)) = fixture(&stmts.join("\n")) else {
+            return;
+        };
+        let rows = c.query_sessions().expect("query");
+        assert_eq!(rows.len(), MAX_SESSIONS as usize);
+        assert!(rows.iter().all(|r| r.id.starts_with("v2_")));
     }
 }

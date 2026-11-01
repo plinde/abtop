@@ -2,6 +2,8 @@
 
 AI agent monitor for your terminal. Like btop++, but for AI coding agents.
 
+Operating the installed tool (config, rate-limit tracking, keybindings, the local release process) is documented in the `/abtop` skill (`~/.agents/skills/abtop/SKILL.md`). This file covers developing the fork.
+
 Supports Claude Code, Codex CLI, and OpenCode sessions.
 
 ## Language Policy

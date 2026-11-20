@@ -140,7 +140,66 @@ session_columns = [
 ]
 # Saved session sort layers. Omit or use [] for the default unsorted view.
 session_sort = ["status:asc", "recent:desc"]
+# Optional external quota state file (see below). Unset by default.
+quota_state_file = "~/.local/state/quota/state.json"
 ```
+
+### External quota state file
+
+By default the quota panel shows Claude (from the `abtop --setup` StatusLine
+hook) and Codex (from live session data). Set `quota_state_file` to have the
+panel also read account-level quota for any number of providers and accounts
+from a JSON document that some other local collector writes. abtop only reads
+the file and never calls a provider API itself.
+
+```json
+{
+  "schema": 1,
+  "generated_at": 1795600000,
+  "records": [
+    {
+      "id": "quota:claude:personal",
+      "kind": "gauge",
+      "domain": "ai-quota",
+      "source": "claude",
+      "account": "personal",
+      "label": "CC",
+      "status": "ok",
+      "fetched_at": 1795599900,
+      "error": null,
+      "data": {
+        "windows": [
+          {"kind": "5h", "scope": "all", "used_pct": 12, "resets_at": 1795610000},
+          {"kind": "7d", "scope": "all", "used_pct": 17, "resets_at": 1796000000}
+        ]
+      }
+    },
+    {
+      "id": "quota:example:main", "kind": "gauge", "domain": "ai-quota",
+      "source": "example", "label": "EX", "status": "ok", "fetched_at": 1795599900,
+      "data": {"balance": {"amount": 19.35, "currency": "USD"}}
+    }
+  ]
+}
+```
+
+- Only `kind: "gauge"`, `domain: "ai-quota"` records are used. Other kinds,
+  domains, unknown fields and `status: "disabled"` records are ignored.
+- Window `kind` is one of `5h`, `rolling` (shown as `5h`), `daily`, `7d` or
+  `monthly`; `scope` is `all` or `model:<Name>`. Only `all` windows render; a
+  `data.binding` window is used when there are none. A record with only
+  `data.balance` renders the amount instead of bars.
+- One column per record: `label` as the header, one bar per window (shortest
+  first) and the reset countdown under the binding (highest-usage) window.
+  Order: claude, codex, then the rest by label. When the panel is too narrow,
+  the worst columns are kept and the rest are counted as `+k` on the totals row.
+- A record is dimmed with its age when `status` is not `ok` or `fetched_at` is
+  older than 30 minutes. A record with no values shows `! <error>`.
+- An unknown `schema` major renders a single `STATE incompatible` column. A
+  missing or unparsable file is ignored.
+- Precedence: Codex uses live session data, then the state file, then the
+  on-disk Codex cache. Claude uses the state file, then
+  `~/.claude/abtop-rate-limits.json`.
 
 `recent` shows the age of the most recent turn or activity for the session.
 `tokens` means active tokens (`input + output + cache_w`). `everything` means

@@ -207,9 +207,7 @@ impl CodexCollector {
             Self::sort_rollouts_by_mtime_desc(&mut desktop_rollout_paths);
 
             for path in desktop_rollout_paths {
-                let pid = desktop_pid_for_path
-                    .get(&path)
-                    .copied();
+                let pid = desktop_pid_for_path.get(&path).copied();
                 let process_ctx = CodexProcessContext {
                     pid,
                     is_exec: false,
@@ -861,10 +859,11 @@ impl super::AgentCollector for CodexCollector {
         self.collect_sessions(shared)
     }
 
+    /// Live rate limit from this run's Codex rollouts only. The on-disk cache
+    /// fallback is applied by the caller so an external quota state file can
+    /// sit between live data and the cache in precedence.
     fn live_rate_limit(&self) -> Option<RateLimitInfo> {
-        self.last_rate_limit
-            .clone()
-            .or_else(super::rate_limit::read_codex_cache)
+        self.last_rate_limit.clone()
     }
 }
 
@@ -1751,11 +1750,9 @@ mod tests {
     #[test]
     fn desktop_filesystem_only_rollout_is_unknown_without_fd_owner() {
         let sessions = tempfile::tempdir().unwrap();
-        let today = sessions.path().join(
-            chrono::Local::now()
-                .format("%Y/%m/%d")
-                .to_string(),
-        );
+        let today = sessions
+            .path()
+            .join(chrono::Local::now().format("%Y/%m/%d").to_string());
         fs::create_dir_all(&today).unwrap();
         let active = today.join("rollout-active.jsonl");
         write_jsonl(&active, &[DESKTOP_SESSION_META]);

@@ -71,10 +71,8 @@ impl DurationPredicate {
         let lower = token.to_ascii_lowercase();
         let (field, rest) = if let Some(r) = lower.strip_prefix("time") {
             (DurationField::Time, r)
-        } else if let Some(r) = lower.strip_prefix("age") {
-            (DurationField::Age, r)
         } else {
-            return None;
+            (DurationField::Age, lower.strip_prefix("age")?)
         };
 
         // Order matters: check the two-char operators before the one-char ones.
@@ -84,10 +82,8 @@ impl DurationPredicate {
             (DurationOp::Le, r)
         } else if let Some(r) = rest.strip_prefix('>') {
             (DurationOp::Gt, r)
-        } else if let Some(r) = rest.strip_prefix('<') {
-            (DurationOp::Lt, r)
         } else {
-            return None;
+            (DurationOp::Lt, rest.strip_prefix('<')?)
         };
 
         let threshold = parse_duration(rest)?;

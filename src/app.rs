@@ -342,6 +342,8 @@ pub struct App {
     pub hovered_section: Option<NarrowSection>,
     /// Additional dirs scanned for abtop-rate-limits.json (from config claude_config_dirs).
     rate_limit_dirs: Vec<PathBuf>,
+    /// Optional external quota state document (config `quota_state_file`).
+    pub quota_state_file: Option<PathBuf>,
     pub filter_text: String,
     pub filter_active: bool,
     pub show_timeline: bool,
@@ -475,6 +477,7 @@ impl App {
             lock_theme,
             hovered_section: None,
             rate_limit_dirs: claude_config_dirs.to_vec(),
+            quota_state_file: None,
             filter_text: String::new(),
             filter_active: false,
             show_timeline: false,
@@ -804,7 +807,9 @@ impl App {
     ];
 
     pub fn select_next_section(&mut self) {
-        let current = self.active_narrow_section().unwrap_or(NarrowSection::Context);
+        let current = self
+            .active_narrow_section()
+            .unwrap_or(NarrowSection::Context);
         let pos = Self::SECTION_ORDER
             .iter()
             .position(|s| *s == current)
@@ -819,7 +824,9 @@ impl App {
     }
 
     pub fn select_prev_section(&mut self) {
-        let current = self.active_narrow_section().unwrap_or(NarrowSection::Context);
+        let current = self
+            .active_narrow_section()
+            .unwrap_or(NarrowSection::Context);
         let pos = Self::SECTION_ORDER
             .iter()
             .position(|s| *s == current)
@@ -898,6 +905,13 @@ impl App {
     }
 
     /// Set a transient status message that auto-clears after 3 seconds.
+    /// Use an external quota state file (see README). `None` keeps the
+    /// built-in Claude/Codex quota sources only.
+    pub fn set_quota_state_file(&mut self, path: Option<PathBuf>) {
+        self.quota_state_file = path;
+        self.rate_limit_counter = 5; // re-read on the next tick
+    }
+
     pub fn set_status(&mut self, msg: String) {
         self.status_msg = Some((msg, Instant::now()));
     }
@@ -962,9 +976,19 @@ impl App {
             self.rate_limit_counter = 0;
             let mut extra_dirs = self.collector.all_config_dirs();
             extra_dirs.extend_from_slice(&self.rate_limit_dirs);
-            self.rate_limits = read_rate_limits(&extra_dirs);
-            // Merge live rate limits from agent collectors (e.g. Codex JSONL parsing)
-            self.rate_limits.extend(self.collector.agent_rate_limits());
+            let legacy = read_rate_limits(&extra_dirs);
+            // Live rate limits from agent collectors (e.g. Codex JSONL parsing).
+            let live = self.collector.agent_rate_limits();
+            let state = self
+                .quota_state_file
+                .as_deref()
+                .and_then(crate::collector::quota_state::read_quota_state);
+            self.rate_limits = crate::collector::quota_state::merge_rate_limits(
+                legacy,
+                live,
+                state,
+                crate::collector::rate_limit::read_codex_cache,
+            );
         } else {
             self.rate_limit_counter += 1;
         }
@@ -1805,7 +1829,10 @@ fn normalize_session_columns(raw: &[String]) -> Vec<SessionSortColumn> {
 fn normalize_session_sort_layers(raw: &[String]) -> Vec<SessionSort> {
     let mut layers = Vec::new();
     for sort in raw.iter().filter_map(|s| parse_session_sort_layer(s)) {
-        if !layers.iter().any(|layer: &SessionSort| layer.column == sort.column) {
+        if !layers
+            .iter()
+            .any(|layer: &SessionSort| layer.column == sort.column)
+        {
             layers.push(sort);
         }
         if layers.len() == MAX_SESSION_SORT_LAYERS {
@@ -1919,6 +1946,7 @@ mod tests {
             seven_day_pct: None,
             seven_day_resets_at: None,
             updated_at: None,
+            ..Default::default()
         }
     }
 

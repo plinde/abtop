@@ -82,7 +82,7 @@ use std::time::Duration;
 /// Construct a headless `App` from loaded config + theme. Shared by the
 /// `--json` and `--once` entry points.
 fn build_app(theme: theme::Theme, cfg: &config::AppConfig) -> App {
-    App::new_with_config_and_claude_dirs_columns_and_sort(
+    let mut app = App::new_with_config_and_claude_dirs_columns_and_sort(
         theme,
         &cfg.hidden_agents,
         cfg.panels,
@@ -90,7 +90,9 @@ fn build_app(theme: theme::Theme, cfg: &config::AppConfig) -> App {
         cfg.lock_theme,
         &cfg.session_columns,
         &cfg.session_sort,
-    )
+    );
+    app.set_quota_state_file(cfg.quota_state_file.clone());
+    app
 }
 
 pub fn run() -> io::Result<()> {
@@ -217,6 +219,7 @@ pub fn run() -> io::Result<()> {
             lock_theme: cfg.lock_theme,
             session_columns: &cfg.session_columns,
             session_sort: &cfg.session_sort,
+            quota_state_file: cfg.quota_state_file.clone(),
         },
     );
 
@@ -239,6 +242,7 @@ struct RunAppOptions<'a> {
     lock_theme: bool,
     session_columns: &'a [String],
     session_sort: &'a [String],
+    quota_state_file: Option<std::path::PathBuf>,
 }
 
 fn run_app(
@@ -254,6 +258,7 @@ fn run_app(
         opts.session_columns,
         opts.session_sort,
     );
+    app.set_quota_state_file(opts.quota_state_file);
     if opts.demo_mode {
         demo::populate_demo(&mut app);
     } else {

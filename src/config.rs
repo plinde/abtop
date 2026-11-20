@@ -49,6 +49,9 @@ pub struct AppConfig {
     /// When true, the `t` hotkey is rebound from cycle-theme to toggle-tree-view.
     /// Theme can still be changed via config menu (`c`) or config.toml.
     pub lock_theme: bool,
+    /// Optional external quota state document (see README "External quota
+    /// state file"). Unset (default) keeps the built-in Claude/Codex sources.
+    pub quota_state_file: Option<PathBuf>,
 }
 
 impl Default for AppConfig {
@@ -62,6 +65,7 @@ impl Default for AppConfig {
             session_sort: Vec::new(),
             language: String::new(),
             lock_theme: false,
+            quota_state_file: None,
         }
     }
 }
@@ -131,6 +135,10 @@ fn parse_config_body(content: &str) -> AppConfig {
                 }
                 "show_mcp" => config.panels.mcp = parse_bool(val).unwrap_or(true),
                 "lock_theme" => config.lock_theme = parse_bool(val).unwrap_or(false),
+                "quota_state_file" => {
+                    config.quota_state_file =
+                        (!val.trim().is_empty()).then(|| expand_home_path(val.trim()))
+                }
                 _ => {}
             }
         }
@@ -309,6 +317,29 @@ mod tests {
     }
 
     #[test]
+    fn quota_state_file_default_unset() {
+        assert!(parse_config_body("theme = \"btop\"\n")
+            .quota_state_file
+            .is_none());
+        assert!(parse_config_body("quota_state_file = \"\"\n")
+            .quota_state_file
+            .is_none());
+    }
+
+    #[test]
+    fn quota_state_file_expands_home() {
+        let home = dirs::home_dir().unwrap();
+        let cfg =
+            parse_config_body("quota_state_file = \"~/.local/state/x/state.json\" # comment\n");
+        assert_eq!(
+            cfg.quota_state_file,
+            Some(home.join(".local/state/x/state.json"))
+        );
+        let cfg = parse_config_body("quota_state_file = '/abs/state.json'\n");
+        assert_eq!(cfg.quota_state_file, Some(PathBuf::from("/abs/state.json")));
+    }
+
+    #[test]
     fn parse_config_body_loads_claude_config_dirs() {
         let home = dirs::home_dir().unwrap();
         let cfg = parse_config_body(r#"claude_config_dirs = ["~/.claude-personal"]"#);
@@ -454,8 +485,10 @@ mod tests {
     #[test]
     fn rewrite_session_sort_replaces_existing() {
         let before = "theme = \"btop\"\nsession_sort = [\"recent:desc\"]\n";
-        let updates: Vec<(&str, String)> =
-            vec![("session_sort", "[\"status:asc\", \"recent:desc\"]".to_string())];
+        let updates: Vec<(&str, String)> = vec![(
+            "session_sort",
+            "[\"status:asc\", \"recent:desc\"]".to_string(),
+        )];
         let after = rewrite_kv_lines(before, &updates);
         assert!(after.contains("session_sort = [\"status:asc\", \"recent:desc\"]"));
         assert!(!after.contains("session_sort = [\"recent:desc\"]"));

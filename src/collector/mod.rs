@@ -3,6 +3,7 @@ pub mod codex;
 pub mod mcp;
 pub mod opencode;
 pub mod process;
+pub mod quota_state;
 pub mod rate_limit;
 
 pub use claude::ClaudeCollector;

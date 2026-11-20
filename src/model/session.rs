@@ -47,6 +47,57 @@ pub struct RateLimitInfo {
     pub seven_day_resets_at: Option<u64>,
     /// When this data was last updated
     pub updated_at: Option<u64>,
+    /// Fields below are only set for records read from an external quota
+    /// state file (`quota_state_file`). Legacy sources leave them default.
+    ///
+    /// Column header (e.g. "CC", "OCb"). `None` → `source` upper-cased.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// Ordered windows (shortest first). Non-empty ⇒ rendered instead of the
+    /// fixed 5h/7d rows.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub windows: Vec<QuotaWindow>,
+    /// Pre-formatted balance (e.g. "$19.35") for balance-only providers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub balance: Option<String>,
+    /// Collector status when not "ok" (e.g. "backoff", "error").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// Error text for a record with no usable values.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// True when the record came from the external quota state file.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub from_state: bool,
+}
+
+/// One quota window from an external quota state file.
+#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+pub struct QuotaWindow {
+    /// Short display label: "5h", "1d", "7d", "mo".
+    pub label: String,
+    /// Used percentage (0-100+).
+    pub used_pct: f64,
+    /// Reset timestamp (epoch seconds), if known.
+    pub resets_at: Option<u64>,
+    /// True for the binding (highest-usage) window of the record.
+    pub binding: bool,
+}
+
+impl RateLimitInfo {
+    /// Highest used percentage across the record's windows (or legacy 5h/7d).
+    pub fn worst_pct(&self) -> f64 {
+        if !self.windows.is_empty() {
+            return self
+                .windows
+                .iter()
+                .map(|w| w.used_pct)
+                .fold(0.0_f64, f64::max);
+        }
+        self.five_hour_pct
+            .unwrap_or(0.0)
+            .max(self.seven_day_pct.unwrap_or(0.0))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

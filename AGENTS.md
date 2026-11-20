@@ -32,6 +32,7 @@ src/
 │   ├── codex.rs            # Codex CLI: session discovery via ps+lsof, JSONL parsing
 │   ├── opencode.rs         # OpenCode: session discovery via ps + SQLite DB parsing
 │   ├── process.rs          # Child process tree (ps) + open ports (lsof) + git stats
+│   ├── quota_state.rs      # Optional external quota state file (quota_state_file)
 │   └── rate_limit.rs       # Rate limit file reading (~/.claude/abtop-rate-limits.json)
 └── model/
     ├── mod.rs              # Re-exports
@@ -78,7 +79,7 @@ Panel rendering priority (top to bottom):
 
 Panel descriptions:
 - **¹context**: Left = token rate braille sparkline (200-point history). Right = per-session context % bars with yellow/red warning.
-- **²quota**: Claude + Codex rate limit gauges side-by-side (5h and 7d windows with reset countdown). Quota is intentionally limited to Claude and Codex; do not add an OpenCode row unless OpenCode exposes a reliable account-level provider rate-limit source.
+- **²quota**: Claude + Codex rate limit gauges side-by-side (5h and 7d windows with reset countdown). With `quota_state_file` set, one column per account-level record from that external document (any provider, e.g. OpenCode Go subscriptions measured by their own usage endpoint). Do not derive quota from local session data for providers that lack an account-level source.
 - **³tokens**: Total token breakdown (in/out/cache) + per-turn sparkline for selected session.
 - **projects** (always visible): Per-project git branch + added/modified file counts.
 - **⁴ports**: Agent-spawned open ports + orphan ports (from dead sessions). Conflict detection.
@@ -176,7 +177,7 @@ Rate limits extracted from `token_count` events:
 - Schema: V1 (1.x) uses `session` + `message` (`$.role`, `$.modelID`). V2 (2.x) uses `session_v2` + `session_message` (`type` column, `$.model.{id,providerID}`); the V1 tables remain, frozen, and migrated V1 sessions are copied into `session_v2`. When `session_v2` exists, read it and add V1 rows only for ids not in `session_v2`.
 - V2 runs one shared backend `opencode serve --service` (cwd `$HOME`) for all clients; it is excluded from PID matching.
 - Match live PIDs to DB sessions by process cwd. OpenCode does not expose a PID/session mapping, so when multiple DB rows share one cwd, only live PIDs should be assigned and older rows should not be shown as live duplicates.
-- OpenCode contributes session/token/project/port data, but not quota data. Quota remains Claude + Codex only.
+- OpenCode contributes session/token/project/port data, but not quota data. OpenCode Go quota can appear only through `quota_state_file` (section 10).
 
 ### 5. Subagents: `~/.claude/projects/{path}/{sessionId}/subagents/`
 - `agent-{hash}.jsonl` — same JSONL format as main transcript
@@ -219,7 +220,15 @@ File format read by abtop:
 - Account-level metric, shared across all sessions.
 - Show "—" when not configured or data unavailable.
 
-### 10. Other files
+### 10. External quota state file (`quota_state_file`)
+
+Optional, unset by default. `collector/quota_state.rs` reads a JSON document of
+`kind: "gauge"`, `domain: "ai-quota"` records written by an external collector
+(format and precedence in README "External quota state file"). Missing or
+unparsable file → ignored; unknown `schema` major → one `STATE incompatible`
+column. Records are stale after 30 min or when `status != "ok"`.
+
+### 11. Other files
 - `~/.claude/stats-cache.json` — daily aggregates. Only updated on `/stats`, NOT real-time.
 - `~/.claude/history.jsonl` — prompt history with sessionId.
 
